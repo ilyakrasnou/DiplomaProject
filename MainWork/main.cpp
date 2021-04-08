@@ -103,11 +103,16 @@ void opencl_environment_definition(CLVars& cl_vars,
     clGetPlatformIDs(0, NULL, &cl_vars.num_platforms);
     cl_vars.platforms = (cl_platform_id *) malloc(sizeof(cl_platform_id) * cl_vars.num_platforms);
     clGetPlatformIDs(cl_vars.num_platforms, cl_vars.platforms, NULL);
-    clGetDeviceIDs(cl_vars.platforms[0], CL_DEVICE_TYPE_GPU, 0, NULL, &cl_vars.num_devices);
+    clGetDeviceIDs(cl_vars.platforms[1], CL_DEVICE_TYPE_GPU, 0, NULL, &cl_vars.num_devices);
     cl_vars.device_list = (cl_device_id *) malloc(sizeof(cl_device_id) * cl_vars.num_devices);
-    clGetDeviceIDs(cl_vars.platforms[0], CL_DEVICE_TYPE_GPU, cl_vars.num_devices, cl_vars.device_list, NULL);
+    clGetDeviceIDs(cl_vars.platforms[1], CL_DEVICE_TYPE_GPU, cl_vars.num_devices, cl_vars.device_list, NULL);
     cl_vars.context = clCreateContext(NULL, cl_vars.num_devices, cl_vars.device_list, NULL, NULL, &cl_vars.clStatus);
     cl_vars.command_queue = clCreateCommandQueue(cl_vars.context, cl_vars.device_list[0], 0, &cl_vars.clStatus);
+
+    // print device name
+    // char deviceName[1024];
+    // clGetDeviceInfo(cl_vars.device_list[0], CL_DEVICE_NAME, sizeof(deviceName), deviceName, NULL);
+    // printf("Device name %s \n", deviceName);
 
     if(cl_vars.kernel_string == nullptr) {
         cl_vars.kernel_string = read_kernel_from_file(kernel_source);
@@ -204,10 +209,10 @@ void opencl_create_program_max_pool(CLVars& cl_vars,
     clock_t t;
     t = clock();
 
-    clEnqueueNDRangeKernel(cl_vars.command_queue, cl_vars.kernel, 2, NULL,
-                                              global_size, local_size, 0, NULL, NULL);
-    clEnqueueReadBuffer(cl_vars.command_queue, C_clmem, CL_TRUE, 0,
-                                           n1 * m1 * sizeof(float), C, 0, NULL, NULL);
+    CL_CHECK(clEnqueueNDRangeKernel(cl_vars.command_queue, cl_vars.kernel, 2, NULL,
+                                              global_size, local_size, 0, NULL, NULL));
+    CL_CHECK(clEnqueueReadBuffer(cl_vars.command_queue, C_clmem, CL_TRUE, 0,
+                                           n1 * m1 * sizeof(float), C, 0, NULL, NULL));
 
     t = clock() - t;
     time_taken += ((double)t)/CLOCKS_PER_SEC; // in seconds
@@ -239,8 +244,8 @@ void opencl_create_program_matrix_mul(CLVars& cl_vars,
 
     cl_vars.kernel = clCreateKernel(cl_vars.program, kernel_name, &cl_vars.clStatus);
 
-    int TS_x = find_divisor(n);
-    int TS_y = find_divisor(m);
+    int TS_x = 32;
+    int TS_y = 32;
 
     std::cout << TS_x << " " << TS_y << std::endl;
 
@@ -267,7 +272,7 @@ void opencl_create_program_matrix_mul(CLVars& cl_vars,
     t = clock();
 
     CL_CHECK(clEnqueueNDRangeKernel(cl_vars.command_queue, cl_vars.kernel, 2, NULL,
-                                               global_size, NULL, 0, NULL, NULL));
+                                               global_size, local_size, 0, NULL, NULL));
 
     CL_CHECK(clFinish(cl_vars.command_queue));
 
@@ -286,7 +291,9 @@ std::vector<float> make_matrix_mul(CLVars& cl_vars) {
     //opencl_environment_definition_vortex(c    l_vars, "kernel_matrix_mul.pocl");
     opencl_environment_definition(cl_vars, "kernel_matrix_mul.cl");
 
-    int n = rand() % 500 + 3, m = rand() % 500 + 3, k = rand() % 500 + 3;
+    // int n = rand() % 500 + 3, m = rand() % 500 + 3, k = rand() % 500 + 3;
+    // int n = 65, m = 87, k = 54;
+    int n = 1023, m = 256, k = 1024;
 
     std::cout << n << " " << m << " " << k << std::endl;
 
@@ -312,13 +319,13 @@ std::vector<float> make_matrix_mul(CLVars& cl_vars) {
         }
     }
 
-    //print_matrix(A, n, k);
-    //print_matrix(B, k, m);
+    // print_matrix(A, n, k);
+    // print_matrix(B, k, m);
 
     opencl_create_program_matrix_mul(cl_vars, "matrix_mul",
                                      A.data(), B.data(), C.data(), n, m, k);
 
-    //print_matrix(C, n, m);
+    // print_matrix(C, n, m);
 
     test_matrix_mul(n, m, k, A, B, C);
 
@@ -327,6 +334,252 @@ std::vector<float> make_matrix_mul(CLVars& cl_vars) {
     time_taken = 0.0f;
 
     return C;
+}
+
+void opencl_create_program_two_matrix_mul(CLVars& cl_vars,
+                                          const char* kernel_name,
+                                          float *A,
+                                          float *B,
+                                          float *C,
+                                          float *X,
+                                          float *Y,
+                                          int n, int m, int k, int q) {
+    cl_mem A_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY,
+                                    n * k * sizeof(float), NULL, &cl_vars.clStatus);
+    cl_mem B_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY,
+                                    k * m * sizeof(float), NULL, &cl_vars.clStatus);
+    cl_mem C_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY,
+                                    m * q * sizeof(float), NULL, &cl_vars.clStatus);
+    cl_mem X_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_WRITE,
+                                    n * m * sizeof(float), NULL, &cl_vars.clStatus);
+    cl_mem Y_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_WRITE,
+                                    n * q * sizeof(float), NULL, &cl_vars.clStatus);
+
+    clEnqueueWriteBuffer(cl_vars.command_queue, A_clmem, CL_TRUE, 0,
+                                             n * k * sizeof(float), A, 0, NULL, NULL);
+
+    clEnqueueWriteBuffer(cl_vars.command_queue, B_clmem, CL_TRUE, 0,
+                                             k * m * sizeof(float), B, 0, NULL, NULL);
+
+    clEnqueueWriteBuffer(cl_vars.command_queue, C_clmem, CL_TRUE, 0,
+                                             m * q * sizeof(float), C, 0, NULL, NULL);
+
+    CL_CHECK(clBuildProgram(cl_vars.program, 1, cl_vars.device_list, NULL, NULL, NULL));
+
+    cl_vars.kernel = clCreateKernel(cl_vars.program, kernel_name, &cl_vars.clStatus);
+
+    // std::cout << n << " " << m << " "<< k << " " << q << std::endl;
+
+    clSetKernelArg(cl_vars.kernel, 0, sizeof(int), (void *) &n);
+    clSetKernelArg(cl_vars.kernel, 1, sizeof(int), (void *) &m);
+    clSetKernelArg(cl_vars.kernel, 2, sizeof(int), (void *) &k);
+    clSetKernelArg(cl_vars.kernel, 3, sizeof(int), (void *) &q);
+    clSetKernelArg(cl_vars.kernel, 4, sizeof(cl_mem), (void *) &A_clmem);
+    clSetKernelArg(cl_vars.kernel, 5, sizeof(cl_mem), (void *) &B_clmem);
+    clSetKernelArg(cl_vars.kernel, 6, sizeof(cl_mem), (void *) &C_clmem);
+    clSetKernelArg(cl_vars.kernel, 7, sizeof(cl_mem), (void *) &X_clmem);
+    clSetKernelArg(cl_vars.kernel, 8, sizeof(cl_mem), (void *) &Y_clmem);
+    
+    size_t global_size[1];
+    size_t local_size[1];
+
+    local_size[0] = std::max(m, q);
+    global_size[0] = n * local_size[0];
+
+    // std::cout << global_size[0] << " " << local_size[0] << std::endl;
+
+    clock_t t;
+    t = clock();
+
+    CL_CHECK(clEnqueueNDRangeKernel(cl_vars.command_queue, cl_vars.kernel, 1, NULL,
+                                    global_size, local_size, 0, NULL, NULL));
+
+    CL_CHECK(clFinish(cl_vars.command_queue));
+
+    clEnqueueReadBuffer(cl_vars.command_queue, X_clmem, CL_TRUE, 0,
+                        n * m * sizeof(float), X, 0, NULL, NULL);
+    clEnqueueReadBuffer(cl_vars.command_queue, Y_clmem, CL_TRUE, 0,
+                        n * q * sizeof(float), Y, 0, NULL, NULL);
+
+    t = clock() - t;
+    printf("Clear execution time %f miliseconds \n", (double)t);
+    time_taken += ((double)t)/CLOCKS_PER_SEC; // in seconds
+
+    clReleaseMemObject(A_clmem);
+    clReleaseMemObject(B_clmem);
+    clReleaseMemObject(C_clmem);
+    clReleaseMemObject(X_clmem);
+    clReleaseMemObject(Y_clmem);
+}
+
+void opencl_create_program_two_matrix_mul_os_is(CLVars& cl_vars,
+                                                const char* kernel_name,
+                                                float *A,
+                                                float *B,
+                                                float *C,
+                                                float *X,
+                                                float *Y,
+                                                int n, int m, int k, int q) {
+    cl_mem A_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY,
+                                    n * k * sizeof(float), NULL, &cl_vars.clStatus);
+    cl_mem B_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY,
+                                    k * m * sizeof(float), NULL, &cl_vars.clStatus);
+    cl_mem C_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY,
+                                    m * q * sizeof(float), NULL, &cl_vars.clStatus);
+    cl_mem X_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_WRITE,
+                                    n * m * sizeof(float), NULL, &cl_vars.clStatus);
+    cl_mem Y_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_WRITE,
+                                    n * q * sizeof(float), NULL, &cl_vars.clStatus);
+
+    clEnqueueWriteBuffer(cl_vars.command_queue, A_clmem, CL_TRUE, 0,
+                                             n * k * sizeof(float), A, 0, NULL, NULL);
+
+    clEnqueueWriteBuffer(cl_vars.command_queue, B_clmem, CL_TRUE, 0,
+                                             k * m * sizeof(float), B, 0, NULL, NULL);
+
+    clEnqueueWriteBuffer(cl_vars.command_queue, C_clmem, CL_TRUE, 0,
+                                             m * q * sizeof(float), C, 0, NULL, NULL);
+
+    CL_CHECK(clBuildProgram(cl_vars.program, 1, cl_vars.device_list, NULL, NULL, NULL));
+
+    cl_vars.kernel = clCreateKernel(cl_vars.program, kernel_name, &cl_vars.clStatus);
+
+    // std::cout << n << " " << m << " "<< k << " " << q << std::endl;
+
+    clSetKernelArg(cl_vars.kernel, 0, sizeof(int), (void *) &n);
+    clSetKernelArg(cl_vars.kernel, 1, sizeof(int), (void *) &m);
+    clSetKernelArg(cl_vars.kernel, 2, sizeof(int), (void *) &k);
+    clSetKernelArg(cl_vars.kernel, 3, sizeof(int), (void *) &q);
+    clSetKernelArg(cl_vars.kernel, 4, sizeof(cl_mem), (void *) &A_clmem);
+    clSetKernelArg(cl_vars.kernel, 5, sizeof(cl_mem), (void *) &B_clmem);
+    clSetKernelArg(cl_vars.kernel, 6, sizeof(cl_mem), (void *) &C_clmem);
+    clSetKernelArg(cl_vars.kernel, 7, sizeof(cl_mem), (void *) &X_clmem);
+    clSetKernelArg(cl_vars.kernel, 8, sizeof(cl_mem), (void *) &Y_clmem);
+    clSetKernelArg(cl_vars.kernel, 9, m * sizeof(float), NULL);
+    
+    size_t global_size[1];
+    size_t local_size[1];
+
+    // local_size[0] = std::max(m, q);
+    // global_size[0] = n * local_size[0];
+
+    local_size[0] = m;
+    global_size[0] = n * local_size[0];
+
+    // std::cout << global_size[0] << " " << local_size[0] << std::endl;
+
+    clock_t t;
+    t = clock();
+
+    CL_CHECK(clEnqueueNDRangeKernel(cl_vars.command_queue, cl_vars.kernel, 1, NULL,
+                                               global_size, local_size, 0, NULL, NULL));
+
+    CL_CHECK(clFinish(cl_vars.command_queue));
+
+    clEnqueueReadBuffer(cl_vars.command_queue, X_clmem, CL_TRUE, 0,
+                                            n * m * sizeof(float), X, 0, NULL, NULL);
+    clEnqueueReadBuffer(cl_vars.command_queue, Y_clmem, CL_TRUE, 0,
+                                            n * q * sizeof(float), Y, 0, NULL, NULL);
+
+    t = clock() - t;
+    printf("Clear execution time %f miliseconds \n", (double)t);
+    time_taken += ((double)t)/CLOCKS_PER_SEC; // in seconds
+
+    clReleaseMemObject(A_clmem);
+    clReleaseMemObject(B_clmem);
+    clReleaseMemObject(C_clmem);
+    clReleaseMemObject(X_clmem);
+    clReleaseMemObject(Y_clmem);
+}
+
+bool make_two_matrix_mul(CLVars& cl_vars) {
+    //opencl_environment_definition_vortex(c    l_vars, "kernel_matrix_mul.pocl");
+
+    int n = rand() % 500 + 3, m = rand() % 500 + 3, k = rand() % 500 + 3, q = rand() % 500 + 3;
+    // int n = 65, m = 87, k = 54, q = 74;
+    // int n = 2, m = 4, k = 5, q = 3;
+
+    // std::cout << n << " " << m << " " << k << " " << q << std::endl;
+
+    std::vector<float> A(n * k);
+    std::vector<float> B(k * m);
+    std::vector<float> C(m * q);
+    std::vector<float> X(n * m);
+    std::vector<float> Y(n * q);
+
+    for (size_t i = 0; i < n; i++) {
+        for(size_t j = 0; j < k; ++j) {
+            A[i * k + j] = 1 * (float)(rand() % 3 + 1);
+        }
+    }
+
+    for (size_t i = 0; i < k; i++) {
+        for(size_t j = 0; j < m; ++j) {
+            B[i * m + j] = 2 * (float)(rand() % 3 + 1);
+        }
+    }
+
+    for (size_t i = 0; i < m; i++) {
+        for(size_t j = 0; j < q; ++j) {
+            C[i * q + j] = 3 * (float)(rand() % 3 + 1);
+        }
+    }
+
+    for (size_t i = 0; i < n; i++) {
+        for(size_t j = 0; j < m; ++j) {
+            X[i * m + j] = 0.0;
+        }
+    }
+
+    for (size_t i = 0; i < n; i++) {
+        for(size_t j = 0; j < q; ++j) {
+            Y[i * q + j] = 0.0;
+        }
+    }
+
+    // printf("Matrix A: \n");
+    // print_matrix(A, n, k);
+    // printf("Matrix B: \n");
+    // print_matrix(B, k, m);
+    // printf("Matrix C: \n");
+    // print_matrix(C, m, q);
+
+    bool isPassed = true;
+
+    opencl_environment_definition(cl_vars, "kernel_two_matrix_mul.cl");
+    printf("Direct two matrix mul: ");
+    opencl_create_program_two_matrix_mul(cl_vars, "two_matrix_mul",
+                                         A.data(), B.data(), C.data(), X.data(), Y.data(), 
+                                         n, m, k, q);
+    
+    isPassed &= test_matrix_mul(n, m, k, A, B, X);
+    isPassed &= test_matrix_mul(n, q, m, X, C, Y);
+
+    cl_clean(cl_vars);
+
+    opencl_environment_definition(cl_vars, "kernel_two_matrix_mul.cl");
+    printf("OS->IS two matrix mul: ");
+    opencl_create_program_two_matrix_mul_os_is(cl_vars, "two_matrix_mul_os_is",
+                                               A.data(), B.data(), C.data(), X.data(), Y.data(), 
+                                               n, m, k, q);
+
+    isPassed &= test_matrix_mul(n, m, k, A, B, X);
+    isPassed &= test_matrix_mul(n, q, m, X, C, Y);
+
+    cl_clean(cl_vars);
+
+    // printf("Matrix X: \n");
+    // print_matrix(X, n, m);
+    // printf("Matrix Y: \n");
+    // print_matrix(Y, n, q);
+
+    
+
+    // printf("kernels took %f seconds to execute \n", time_taken);
+
+    time_taken = 0.0f;
+
+    return isPassed;
 }
 
 std::vector<float> make_convolution(CLVars& cl_vars) {
@@ -438,15 +691,24 @@ int main (int argc, char **argv) {
 
     srand(time(nullptr));
 
+    bool isPassed = true;
     CLVars cl_vars;
 
-    for(int i = 0; i < 100; ++i) {
-        make_matrix_mul(cl_vars);
-        cl_clean(cl_vars);
+    for(int i = 0; i < 10; ++i) {
+        isPassed &= make_two_matrix_mul(cl_vars);
+        // cl_clean(cl_vars);
     }
 
     if(cl_vars.kernel_string != NULL) {
         free(cl_vars.kernel_string);
+    }
+
+    std::cout << "Total: ";
+    if(isPassed) {
+        std::cout << "Passed!" << std::endl;
+    }
+    else {
+        std::cout << "Failed!" << std::endl;
     }
 
     return 0;

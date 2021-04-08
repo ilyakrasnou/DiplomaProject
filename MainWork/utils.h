@@ -113,7 +113,7 @@ bool test_matrix_mul(int n, int m, int k,
                      const std::vector<T>& A,
                      const std::vector<T>& B,
                      const std::vector<T>& C,
-                     float eps = 1e-7) {
+                     float eps = 1e-10) {
     bool isPassed = true;
     for(size_t i = 0; i < n; ++i) {
         for(size_t j = 0; j < m; ++j) {
@@ -121,9 +121,9 @@ bool test_matrix_mul(int n, int m, int k,
             for(size_t p = 0; p < k; ++p) {
                 val += A[i * k + p] * B[p * m + j];
             }
-//            if(!float_compare(val, C[i * m + j], eps)) {
-//                std::cout << val << " " << C[i * m + j] << std::endl;
-//            }
+        //    if(!float_compare(val, C[i * m + j], eps)) {
+        //        std::cout << "Error " << val << " " << C[i * m + j] << std::endl;
+        //    }
             isPassed &= float_compare(val, C[i * m + j], eps);
         }
     }
@@ -137,6 +137,56 @@ bool test_matrix_mul(int n, int m, int k,
 
     return isPassed;
 }
+
+// template<typename T>
+// bool test_two_matrix_mul(int n, int m, int k, int q,
+//                          const std::vector<T>& A,
+//                          const std::vector<T>& B,
+//                          const std::vector<T>& C,
+//                          const std::vector<T>& X,
+//                          const std::vector<T>& Y,
+//                          float eps = 1e-7) {
+//     bool isPassed = true;
+//     for(size_t i = 0; i < n; ++i) {
+//         for(size_t j = 0; j < m; ++j) {
+//             float val = 0.0f;
+//             for(size_t p = 0; p < k; ++p) {
+//                 val += A[i * k + p] * B[p * m + j];
+//             }
+//             if(!float_compare(val, X[i * m + j], eps)) {
+//                 std::cout << "Fuck " << val << " " << X[i * m + j] << std::endl;
+//             }
+//             isPassed &= float_compare(val, X[i * m + j], eps);
+//         }
+//     }
+
+//     if(!isPassed) {
+//         std::cout << "Failed!" << std::endl;
+//         return isPassed;
+//     }
+
+//     for(size_t i = 0; i < n; ++i) {
+//         for(size_t j = 0; j < q; ++j) {
+//             float val = 0.0f;
+//             for(size_t p = 0; p < m; ++p) {
+//                 val += X[i * m + p] * C[p * q + j];
+//             }
+//             if(!float_compare(val, Y[i * q + j], eps)) {
+//                 std::cout << "Fuck 2 " << val << " " << Y[i * q + j] << std::endl;
+//             }
+//             isPassed &= float_compare(val, Y[i * q + j], eps);
+//         }
+//     }
+
+//     if(isPassed) {
+//         std::cout << "Passed!" << std::endl;
+//     }
+//     else {
+//         std::cout << "Failed!" << std::endl;
+//     }
+
+//     return isPassed;
+// }
 
 template<typename T>
 T find_divisor(T n) {
