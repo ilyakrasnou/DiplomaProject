@@ -10,7 +10,7 @@
 				"-o", "${fileDirname}\\main.exe",
 				"-I", "${CUDA_PATH}\\include", 
 				"-L", "${CUDA_PATH}\\lib\\x64", 
-				"-std=c++11",
+				"-std=c++17",
 				"-lOpenCL",
 			],
 			"options": {

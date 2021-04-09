@@ -1,5 +1,6 @@
 #include <vector>
 #include <iostream>
+#include <optional>
 
 float* read_image(const char *filename,
                   int* widthOut,
@@ -68,7 +69,7 @@ bool test_convolution(int n, int m, int n1, int m1,
 }
 
 template<typename T>
-bool test_max_pool(int nc, int mc, int n1, int m1,
+bool test_max_pool(int n, int m, int n1, int m1,
                    const std::vector<T>& A,
                    const std::vector<T>& C,
                    float eps = 1e-7) {
@@ -77,17 +78,17 @@ bool test_max_pool(int nc, int mc, int n1, int m1,
     for (size_t i = 0; i < n1; ++i) {
         for(size_t j = 0; j < m1; ++j) {
             float a1 = -1e9,a2 = -1e9,a3 = -1e9,a4 = -1e9;
-            if(i * 2 * mc + j * 2 < mc * nc) {
-                a1 = A[i * 2 * mc + j * 2];
+            if(i * 2 < n && j * 2 < m) {
+                a1 = A[i * 2 * m + j * 2];
             }
-            if(i * 2 * mc + j * 2 + 1 < mc * nc) {
-                a2 = A[i * 2 * mc + j * 2 + 1];
+            if(i * 2 < n && j * 2 + 1 < m) {
+                a2 = A[i * 2 * m + j * 2 + 1];
             }
-            if((i * 2 + 1) * mc + j * 2 < mc * nc) {
-                a3 = A[(i * 2 + 1) * mc + j * 2];
+            if((i * 2 + 1) < n && j * 2 < m) {
+                a3 = A[(i * 2 + 1) * m + j * 2];
             }
-            if((i * 2 + 1) * mc + (j * 2 + 1) < mc * nc) {
-                a4 = A[(i * 2 + 1) * mc + (j * 2 + 1)];
+            if((i * 2 + 1) < n && (j * 2 + 1) < m) {
+                a4 = A[(i * 2 + 1) * m + (j * 2 + 1)];
             }
 
             a1 = fmax(a1, a2);
@@ -126,6 +127,7 @@ bool test_matrix_mul(int n, int m, int k,
         //    }
             isPassed &= float_compare(val, C[i * m + j], eps);
         }
+//        std::cout << std::endl;
     }
 
     if(isPassed) {
@@ -189,13 +191,24 @@ bool test_matrix_mul(int n, int m, int k,
 // }
 
 template<typename T>
-T find_divisor(T n) {
-    T fin;
-    for(T i = 2; i * i <= n; ++i) {
-        if(n % i == 0) {
-            return i;
+std::optional<std::vector<T>> matrix_expand(const std::vector<T> & arr,
+                              int n, int m,
+                              int n1, int m1) {
+
+    if(n > n1 || m > m1) {
+        return std::nullopt;
+    }
+
+    std::vector<T> fin(n1 * m1, 0);
+    size_t iter = 0;
+    for(int i = 0; i < n1; ++i) {
+        for(int j = 0; j < m1; ++j) {
+            if(i < n && j < m) {
+                fin[iter] = arr[i * m + j];
+            }
+            iter++;
         }
     }
 
-    return n;
+    return fin;
 }

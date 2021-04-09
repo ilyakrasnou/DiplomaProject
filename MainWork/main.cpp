@@ -27,48 +27,43 @@ double eps = 1e-7;
 
 //OpenCl
 struct CLVars {
-    cl_platform_id *platforms = NULL;
+    cl_platform_id *platforms = nullptr;
     cl_uint num_platforms;
     cl_int clStatus;
-    cl_device_id *device_list = NULL;
+    cl_device_id *device_list = nullptr;
     cl_uint num_devices;
-    cl_context context = NULL;
-    cl_kernel kernel = NULL;
-    cl_command_queue command_queue = NULL;
-    cl_program program = NULL;
-    char *kernel_string = NULL;
+    cl_context context = nullptr;
+    cl_kernel kernel = nullptr;
+    cl_command_queue command_queue = nullptr;
+    cl_program program = nullptr;
+    char *kernel_string = nullptr;
 
     //vortex
-    cl_platform_id platform = NULL;
-    cl_device_id device = NULL;
+    cl_platform_id platform = nullptr;
+    cl_device_id device = nullptr;
 };
 //
 
 void cl_clean(CLVars& cl_vars) {
-    if(cl_vars.device != NULL) {
+    if(cl_vars.device != nullptr) {
         clReleaseDevice(cl_vars.device);
-        //std::cout << "device released" << std::endl;
     }
-    if (cl_vars.command_queue != NULL) {
+    if (cl_vars.command_queue != nullptr) {
         clReleaseCommandQueue(cl_vars.command_queue);
-        //std::cout << "command_queue released" << std::endl;
     }
-    if (cl_vars.kernel != NULL) {
+    if (cl_vars.kernel != nullptr) {
         clReleaseKernel(cl_vars.kernel);
-        //std::cout << "kernel released" << std::endl;
     }
-    if (cl_vars.program != NULL) {
+    if (cl_vars.program != nullptr) {
         clReleaseProgram(cl_vars.program);
-        //std::cout << "program released" << std::endl;
     }
-    if (cl_vars.context != NULL) {
+    if (cl_vars.context != nullptr) {
         clReleaseContext(cl_vars.context);
-        //std::cout << "context released" << std::endl;
     }
-    if(cl_vars.platforms != NULL) {
+    if(cl_vars.platforms != nullptr) {
         free(cl_vars.platforms);
     }
-    if(cl_vars.device_list != NULL) {
+    if(cl_vars.device_list != nullptr) {
         free(cl_vars.device_list);
     }
 }
@@ -178,16 +173,21 @@ void opencl_create_program_max_pool(CLVars& cl_vars,
                                     float *A,
                                     float *C,
                                     int n, int m) {
+    int nc = n;
+    int mc = m;
+    n = (n + (n & 1));
+    m = (m + (m & 1));
+
     int n1 = n / 2;
     int m1 = m / 2;
 
     cl_mem A_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY,
-                                    n * m * sizeof(float), NULL, &cl_vars.clStatus);
+                                    nc * mc * sizeof(float), NULL, &cl_vars.clStatus);
     cl_mem C_clmem = clCreateBuffer(cl_vars.context, CL_MEM_WRITE_ONLY,
                                     n1 * m1 * sizeof(float), NULL, &cl_vars.clStatus);
 
     clEnqueueWriteBuffer(cl_vars.command_queue, A_clmem, CL_TRUE, 0,
-                                            n * m * sizeof(float), A, 0, NULL, NULL);
+                                            nc * mc * sizeof(float), A, 0, NULL, NULL);
 
     clBuildProgram(cl_vars.program, 1, cl_vars.device_list, NULL, NULL, NULL);
 
@@ -195,8 +195,10 @@ void opencl_create_program_max_pool(CLVars& cl_vars,
 
     clSetKernelArg(cl_vars.kernel, 0, sizeof(int), (void *) &n);
     clSetKernelArg(cl_vars.kernel, 1, sizeof(int), (void *) &m);
-    clSetKernelArg(cl_vars.kernel, 2, sizeof(cl_mem), (void *) &A_clmem);
-    clSetKernelArg(cl_vars.kernel, 3, sizeof(cl_mem), (void *) &C_clmem);
+    clSetKernelArg(cl_vars.kernel, 2, sizeof(int), (void *) &nc);
+    clSetKernelArg(cl_vars.kernel, 3, sizeof(int), (void *) &mc);
+    clSetKernelArg(cl_vars.kernel, 4, sizeof(cl_mem), (void *) &A_clmem);
+    clSetKernelArg(cl_vars.kernel, 5, sizeof(cl_mem), (void *) &C_clmem);
 
     size_t global_size[2];
     size_t local_size[2];
@@ -226,7 +228,8 @@ void opencl_create_program_matrix_mul(CLVars& cl_vars,
                                       float *A,
                                       float *B,
                                       float *C,
-                                      int n, int m, int k) {
+                                      int n, int m, int k, int TS) {
+
     cl_mem A_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY,
                                     n * k * sizeof(float), NULL, &cl_vars.clStatus);
     cl_mem B_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY,
@@ -236,7 +239,6 @@ void opencl_create_program_matrix_mul(CLVars& cl_vars,
 
     clEnqueueWriteBuffer(cl_vars.command_queue, A_clmem, CL_TRUE, 0,
                                              n * k * sizeof(float), A, 0, NULL, NULL);
-
     clEnqueueWriteBuffer(cl_vars.command_queue, B_clmem, CL_TRUE, 0,
                                              k * m * sizeof(float), B, 0, NULL, NULL);
 
@@ -244,29 +246,40 @@ void opencl_create_program_matrix_mul(CLVars& cl_vars,
 
     cl_vars.kernel = clCreateKernel(cl_vars.program, kernel_name, &cl_vars.clStatus);
 
-    int TS_x = 32;
-    int TS_y = 32;
+    int k1 = k;
 
-    std::cout << TS_x << " " << TS_y << std::endl;
+    if(k % TS != 0) {
+        k += TS - (k % TS);
+    }
+
+    std::cout << k << std::endl;
 
     clSetKernelArg(cl_vars.kernel, 0, sizeof(int), (void *) &n);
     clSetKernelArg(cl_vars.kernel, 1, sizeof(int), (void *) &m);
     clSetKernelArg(cl_vars.kernel, 2, sizeof(int), (void *) &k);
-    clSetKernelArg(cl_vars.kernel, 3, sizeof(int), (void *) &TS_x);
-    clSetKernelArg(cl_vars.kernel, 4, sizeof(int), (void *) &TS_y);
+    clSetKernelArg(cl_vars.kernel, 3, sizeof(int), (void *) &k1);
+    clSetKernelArg(cl_vars.kernel, 4, sizeof(int), (void *) &TS);
     clSetKernelArg(cl_vars.kernel, 5, sizeof(cl_mem), (void *) &A_clmem);
     clSetKernelArg(cl_vars.kernel, 6, sizeof(cl_mem), (void *) &B_clmem);
     clSetKernelArg(cl_vars.kernel, 7, sizeof(cl_mem), (void *) &C_clmem);
-    //clSetKernelArg(cl_vars.kernel, 8, TS_x * TS_y * sizeof(float), NULL);
-    //clSetKernelArg(cl_vars.kernel, 9, TS_x * TS_y * sizeof(float), NULL);
+    clSetKernelArg(cl_vars.kernel, 8, TS * TS * sizeof(float), NULL);
+    clSetKernelArg(cl_vars.kernel, 9, TS * TS * sizeof(float), NULL);
 
     size_t global_size[2];
     size_t local_size[2];
 
     global_size[0] = n;
     global_size[1] = m;
-    local_size[0] = TS_x;
-    local_size[1] = TS_y;
+
+    if(global_size[0] % TS != 0) {
+        global_size[0] += TS - (global_size[0] % TS);
+    }
+    if(global_size[1] % TS != 0) {
+        global_size[1] += TS - (global_size[1] % TS);
+    }
+
+    local_size[0] = TS;
+    local_size[1] = TS;
 
     clock_t t;
     t = clock();
@@ -288,12 +301,12 @@ void opencl_create_program_matrix_mul(CLVars& cl_vars,
 }
 
 std::vector<float> make_matrix_mul(CLVars& cl_vars) {
-    //opencl_environment_definition_vortex(c    l_vars, "kernel_matrix_mul.pocl");
     opencl_environment_definition(cl_vars, "kernel_matrix_mul.cl");
 
     // int n = rand() % 500 + 3, m = rand() % 500 + 3, k = rand() % 500 + 3;
     // int n = 65, m = 87, k = 54;
-    int n = 1023, m = 256, k = 1024;
+    // int n = 1023, m = 256, k = 1024;
+    int n = rand() % 1000 + 3, m = rand() % 1000 + 3, k = rand() % 1000 + 3, TS = 8;
 
     std::cout << n << " " << m << " " << k << std::endl;
 
@@ -323,11 +336,11 @@ std::vector<float> make_matrix_mul(CLVars& cl_vars) {
     // print_matrix(B, k, m);
 
     opencl_create_program_matrix_mul(cl_vars, "matrix_mul",
-                                     A.data(), B.data(), C.data(), n, m, k);
+                                     A.data(), B.data(), C.data(), n, m, k, TS);
 
     // print_matrix(C, n, m);
 
-    test_matrix_mul(n, m, k, A, B, C);
+    assert(test_matrix_mul(n, m, k, A, B, C, eps));
 
     printf("kernels took %f seconds to execute \n", time_taken);
 
@@ -608,7 +621,7 @@ std::vector<float> make_convolution(CLVars& cl_vars) {
      opencl_create_program_conv(cl_vars, "matrix_convolutional_transformation", A.data(),
                                 Filter.data(), C.data(), n, m, n1, m1);
 
-     test_convolution(n, m, n1, m1, A, Filter, C);
+     assert(test_convolution(n, m, n1, m1, A, Filter, C));
 
      printf("kernels took %f seconds to execute \n", time_taken);
 
@@ -620,36 +633,30 @@ std::vector<float> make_convolution(CLVars& cl_vars) {
 std::vector<float> make_max_pool(CLVars& cl_vars) {
     opencl_environment_definition(cl_vars, "kernel_max_pool.cl");
 
-    int n = rand() % 1111 + 3, m = rand() % 1111 + 3;
-    printf("n = %d, m = %d\n", n, m);
-    
-    int nc = n + (n & 1), mc = m + (m & 1);
+    int n = rand() % 1000 + 3, m = rand() % 1122 + 3;
 
-    int n1 = nc / 2;
-    int m1 = mc / 2;
+    std::cout << n << " " << m << std::endl;
 
-    std::vector<float> A(nc * mc);
+    int n1 = (n + (n & 1)) / 2;
+    int m1 = (m + (m & 1)) / 2;
+
+    std::vector<float> A(n * m);
     std::vector<float> C(n1 * m1);
 
-    int pos = 0;
-    for (size_t i = 0; i < nc; ++i) {
-        for (size_t j = 0; j < mc; ++j) {
-            if (i >= n || j >= m) {
-                A[pos++] = 0.0;
-                continue;
-            }
-            A[pos++] = rand() % 3 + 1.0 / (1.0 + rand() % 3);
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = 0; j < m; ++j) {
+            A[i * m + j] = rand() % 3 + 1.0 / (1.0 + rand() % 3);
         }
     }
     
-    //print_matrix(A, mc, nc);
+    //print_matrix(A, n, m);
 
     opencl_create_program_max_pool(cl_vars, "matrix_max_pool_transformation",
-                                   A.data(), C.data(), nc, mc);
+                                   A.data(), C.data(), n, m);
     
-    //print_matrix(C, m1, n1);
+    //print_matrix(C, n1, m1);
 
-    test_max_pool(nc, mc, n1, m1, A, C);
+    assert(test_max_pool(n, m, n1, m1, A, C));
 
     printf("kernels took %f seconds to execute \n", time_taken);
 
@@ -657,35 +664,6 @@ std::vector<float> make_max_pool(CLVars& cl_vars) {
 
     return C;
 }
-
-#ifdef h5_debug
-void h5() {
-    std::string s = "../PythonNeuro/mnist_model.h5";
-    H5::H5File file(s.c_str(), H5F_ACC_RDONLY);
-    H5::DataSet dataset = file.openDataSet("/model_weights/conv2d/conv2d/kernel:0");
-    H5::DataSpace dataspace = dataset.getSpace();
-    int rank = dataspace.getSimpleExtentNdims();
-    std::cout << rank << std::endl;
-
-
-    hsize_t dims[4];
-    dataspace.getSimpleExtentDims(dims, NULL);
-    std::cout << dims[0] << " " << dims[1] << " " << dims[2] << " " << dims[3] << std::endl;
-
-    H5::DataSpace mem_space(4, dims);
-    float arr[3][3][1][32];
-
-    dataset.read(arr, H5::PredType::NATIVE_FLOAT, mem_space, dataspace);
-
-    for (int i = 0; i < 3; ++i) {
-        for(int j = 0; j < 3; ++j) {
-            for(int k = 0; k < 32; ++k) {
-                std::cout << arr[i][j][0][k] << std::endl;
-            }
-        }
-    }
-}
-#endif
 
 int main (int argc, char **argv) {
 
@@ -699,9 +677,7 @@ int main (int argc, char **argv) {
         // cl_clean(cl_vars);
     }
 
-    if(cl_vars.kernel_string != NULL) {
-        free(cl_vars.kernel_string);
-    }
+    free(cl_vars.kernel_string);
 
     std::cout << "Total: ";
     if(isPassed) {
