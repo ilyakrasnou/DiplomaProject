@@ -443,6 +443,8 @@ void opencl_create_program_two_matrix_mul_os_is(CLVars& cl_vars,
                                     n * m * sizeof(float), NULL, &cl_vars.clStatus);
     cl_mem Y_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_WRITE,
                                     n * q * sizeof(float), NULL, &cl_vars.clStatus);
+    // cl_mem block_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_WRITE,
+    //                                 q * sizeof(int), NULL, &cl_vars.clStatus);
 
     clEnqueueWriteBuffer(cl_vars.command_queue, A_clmem, CL_TRUE, 0,
                                              n * k * sizeof(float), A, 0, NULL, NULL);
@@ -452,6 +454,10 @@ void opencl_create_program_two_matrix_mul_os_is(CLVars& cl_vars,
 
     clEnqueueWriteBuffer(cl_vars.command_queue, C_clmem, CL_TRUE, 0,
                                              m * q * sizeof(float), C, 0, NULL, NULL);
+
+    // std::vector<float> block(q, 0);
+    // clEnqueueWriteBuffer(cl_vars.command_queue, block_clmem, CL_TRUE, 0,
+    //                                          q * sizeof(int), block.data(), 0, NULL, NULL);
 
     CL_CHECK(clBuildProgram(cl_vars.program, 1, cl_vars.device_list, NULL, NULL, NULL));
 
@@ -468,15 +474,17 @@ void opencl_create_program_two_matrix_mul_os_is(CLVars& cl_vars,
     clSetKernelArg(cl_vars.kernel, 6, sizeof(cl_mem), (void *) &C_clmem);
     clSetKernelArg(cl_vars.kernel, 7, sizeof(cl_mem), (void *) &X_clmem);
     clSetKernelArg(cl_vars.kernel, 8, sizeof(cl_mem), (void *) &Y_clmem);
-    clSetKernelArg(cl_vars.kernel, 9, m * sizeof(float), NULL);
+    // clSetKernelArg(cl_vars.kernel, 9, 1 * sizeof(int), NULL);
+    clSetKernelArg(cl_vars.kernel, 9, q * m * sizeof(float), NULL);
+    
     
     size_t global_size[1];
     size_t local_size[1];
 
-    // local_size[0] = std::max(m, q);
+    // local_size[0] = m;
     // global_size[0] = n * local_size[0];
 
-    local_size[0] = m;
+    local_size[0] = std::max(m, q);
     global_size[0] = n * local_size[0];
 
     // std::cout << global_size[0] << " " << local_size[0] << std::endl;
@@ -508,9 +516,10 @@ void opencl_create_program_two_matrix_mul_os_is(CLVars& cl_vars,
 bool make_two_matrix_mul(CLVars& cl_vars) {
     //opencl_environment_definition_vortex(c    l_vars, "kernel_matrix_mul.pocl");
 
-    int n = rand() % 500 + 3, m = rand() % 500 + 3, k = rand() % 500 + 3, q = rand() % 500 + 3;
+    int n = rand() % 500 + 3, m = rand() % 100 + 3, k = rand() % 500 + 3, q = rand() % 100 + 3;
+    // int n = rand() % 500 + 3, m = 10, k = rand() % 500 + 3, q = rand() % 500 + 3;
     // int n = 65, m = 87, k = 54, q = 74;
-    // int n = 2, m = 4, k = 5, q = 3;
+    // int n = 4, m = 10, k = 5, q = 3;
 
     // std::cout << n << " " << m << " " << k << " " << q << std::endl;
 
@@ -569,6 +578,11 @@ bool make_two_matrix_mul(CLVars& cl_vars) {
     isPassed &= test_matrix_mul(n, q, m, X, C, Y);
 
     cl_clean(cl_vars);
+
+    // printf("Matrix X: \n");
+    // print_matrix(X, n, m);
+    // printf("Matrix Y: \n");
+    // print_matrix(Y, n, q);
 
     opencl_environment_definition(cl_vars, "kernel_two_matrix_mul.cl");
     printf("OS->IS two matrix mul: ");

@@ -34,7 +34,7 @@ __kernel void two_matrix_mul(const int M,
     }
 }
 
-
+// #pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
 __kernel void two_matrix_mul_os_is(const int M,
                                    const int N,
                                    const int K,
@@ -44,39 +44,52 @@ __kernel void two_matrix_mul_os_is(const int M,
                                    const __global float* C, // N*P
                                    __global float* X, // M*N
                                    __global float* Y, // M*P 
-                                   __local float* buffer) { // N
+                                   __local float* buffer) { // P*N
 
     const int globalRow = get_group_id(0); // < M
-    const int globalCol = get_local_id(0); // < N
+    const int globalCol = get_local_id(0); // < max(N, P)
     float acc = 0.0f;
-    float bufferSum = 0.0f;
 
-    // calculate X[m, n]
-    for (int k = 0; k < K; ++k) {
-        acc += A[globalRow * K + k] * B[k * N + globalCol];
-    }
+    // __local int block[0];
 
-    for (int p = 0; p < P; ++p) {
-        // make multiplication X[m,n] * C[n,p] and write to group buffer 
-        buffer[globalCol] = acc * C[globalCol * P + p];
+    // if (globalCol == 0) {
+    //     atomic_xchg(block, 0);
+    // }
 
-        // sync group buffer to calculate reduced sum
-        barrier(CLK_LOCAL_MEM_FENCE);
+    // barrier(CLK_LOCAL_MEM_FENCE);
 
-        // calculate Y[m, p]
-        // first thread calculate reduced sum over all group buffer
-        if (globalCol == 0) {
-            bufferSum = 0.0f;
-            for (int n = 0; n < N; ++n) {
-                bufferSum += buffer[n]; 
-            }
-            // write sum to global memory
-            Y[globalRow * P + p] = bufferSum;
+    if (globalCol < N) {
+        // calculate X[m, n]
+        for (int k = 0; k < K; ++k) {
+            acc += A[globalRow * K + k] * B[k * N + globalCol];
         }
-        // sync group buffer to write in it on next iteration
-        barrier(CLK_LOCAL_MEM_FENCE);
+
+        // write X[m, n]
+        // X[globalRow * N + globalCol] = acc;
+        // barrier(CLK_GLOBAL_MEM_FENCE);
+
+        for (int p = 0; p < P; ++p) {
+            // get mutex
+            // while (atomic_cmpxchg(block, 0, 1) != 0) { }
+
+            // make multiplication X[m,n] * C[n,p] and write to group buffer 
+            buffer[p * N + globalCol] = acc * C[globalCol * P + p];
+
+            // release_mutex(&block[p]);
+            // int prevVal = atomic_cmpxchg(block, 1, 0);
+        }
+        // write X[m, n]
+        X[globalRow * N + globalCol] = acc;
+
     }
 
-    // write X[m, n]
-    X[globalRow * N + globalCol] = acc;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    
+    if (globalCol < P) {
+        acc = 0.0f;
+        for (int n = 0; n < N; ++n) {
+            acc += buffer[globalCol * N + n];
+        }
+        Y[globalRow * P + globalCol] = acc;
+    }
 }
