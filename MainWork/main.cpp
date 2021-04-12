@@ -351,31 +351,31 @@ std::vector<float> make_matrix_mul(CLVars& cl_vars) {
 
 void opencl_create_program_two_matrix_mul(CLVars& cl_vars,
                                           const char* kernel_name,
-                                          float *A,
-                                          float *B,
-                                          float *C,
-                                          float *X,
-                                          float *Y,
+                                          int *A,
+                                          int *B,
+                                          int *C,
+                                          int *X,
+                                          int *Y,
                                           int n, int m, int k, int q) {
     cl_mem A_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY,
-                                    n * k * sizeof(float), NULL, &cl_vars.clStatus);
+                                    n * k * sizeof(int), NULL, &cl_vars.clStatus);
     cl_mem B_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY,
-                                    k * m * sizeof(float), NULL, &cl_vars.clStatus);
+                                    k * m * sizeof(int), NULL, &cl_vars.clStatus);
     cl_mem C_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY,
-                                    m * q * sizeof(float), NULL, &cl_vars.clStatus);
+                                    m * q * sizeof(int), NULL, &cl_vars.clStatus);
     cl_mem X_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_WRITE,
-                                    n * m * sizeof(float), NULL, &cl_vars.clStatus);
+                                    n * m * sizeof(int), NULL, &cl_vars.clStatus);
     cl_mem Y_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_WRITE,
-                                    n * q * sizeof(float), NULL, &cl_vars.clStatus);
+                                    n * q * sizeof(int), NULL, &cl_vars.clStatus);
 
     clEnqueueWriteBuffer(cl_vars.command_queue, A_clmem, CL_TRUE, 0,
-                                             n * k * sizeof(float), A, 0, NULL, NULL);
+                                             n * k * sizeof(int), A, 0, NULL, NULL);
 
     clEnqueueWriteBuffer(cl_vars.command_queue, B_clmem, CL_TRUE, 0,
-                                             k * m * sizeof(float), B, 0, NULL, NULL);
+                                             k * m * sizeof(int), B, 0, NULL, NULL);
 
     clEnqueueWriteBuffer(cl_vars.command_queue, C_clmem, CL_TRUE, 0,
-                                             m * q * sizeof(float), C, 0, NULL, NULL);
+                                             m * q * sizeof(int), C, 0, NULL, NULL);
 
     CL_CHECK(clBuildProgram(cl_vars.program, 1, cl_vars.device_list, NULL, NULL, NULL));
 
@@ -410,9 +410,9 @@ void opencl_create_program_two_matrix_mul(CLVars& cl_vars,
     CL_CHECK(clFinish(cl_vars.command_queue));
 
     clEnqueueReadBuffer(cl_vars.command_queue, X_clmem, CL_TRUE, 0,
-                        n * m * sizeof(float), X, 0, NULL, NULL);
+                        n * m * sizeof(int), X, 0, NULL, NULL);
     clEnqueueReadBuffer(cl_vars.command_queue, Y_clmem, CL_TRUE, 0,
-                        n * q * sizeof(float), Y, 0, NULL, NULL);
+                        n * q * sizeof(int), Y, 0, NULL, NULL);
 
     t = clock() - t;
     printf("Clear execution time %f miliseconds \n", (double)t);
@@ -427,33 +427,33 @@ void opencl_create_program_two_matrix_mul(CLVars& cl_vars,
 
 void opencl_create_program_two_matrix_mul_os_is(CLVars& cl_vars,
                                                 const char* kernel_name,
-                                                float *A,
-                                                float *B,
-                                                float *C,
-                                                float *X,
-                                                float *Y,
+                                                int *A,
+                                                int *B,
+                                                int *C,
+                                                int *X,
+                                                int *Y,
                                                 int n, int m, int k, int q) {
     cl_mem A_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY,
-                                    n * k * sizeof(float), NULL, &cl_vars.clStatus);
+                                    n * k * sizeof(int), NULL, &cl_vars.clStatus);
     cl_mem B_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY,
-                                    k * m * sizeof(float), NULL, &cl_vars.clStatus);
+                                    k * m * sizeof(int), NULL, &cl_vars.clStatus);
     cl_mem C_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY,
-                                    m * q * sizeof(float), NULL, &cl_vars.clStatus);
+                                    m * q * sizeof(int), NULL, &cl_vars.clStatus);
     cl_mem X_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_WRITE,
-                                    n * m * sizeof(float), NULL, &cl_vars.clStatus);
+                                    n * m * sizeof(int), NULL, &cl_vars.clStatus);
     cl_mem Y_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_WRITE,
-                                    n * q * sizeof(float), NULL, &cl_vars.clStatus);
+                                    n * q * sizeof(int), NULL, &cl_vars.clStatus);
     // cl_mem block_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_WRITE,
     //                                 q * sizeof(int), NULL, &cl_vars.clStatus);
 
     clEnqueueWriteBuffer(cl_vars.command_queue, A_clmem, CL_TRUE, 0,
-                                             n * k * sizeof(float), A, 0, NULL, NULL);
+                                             n * k * sizeof(int), A, 0, NULL, NULL);
 
     clEnqueueWriteBuffer(cl_vars.command_queue, B_clmem, CL_TRUE, 0,
-                                             k * m * sizeof(float), B, 0, NULL, NULL);
+                                             k * m * sizeof(int), B, 0, NULL, NULL);
 
     clEnqueueWriteBuffer(cl_vars.command_queue, C_clmem, CL_TRUE, 0,
-                                             m * q * sizeof(float), C, 0, NULL, NULL);
+                                             m * q * sizeof(int), C, 0, NULL, NULL);
 
     // std::vector<float> block(q, 0);
     // clEnqueueWriteBuffer(cl_vars.command_queue, block_clmem, CL_TRUE, 0,
@@ -474,18 +474,18 @@ void opencl_create_program_two_matrix_mul_os_is(CLVars& cl_vars,
     clSetKernelArg(cl_vars.kernel, 6, sizeof(cl_mem), (void *) &C_clmem);
     clSetKernelArg(cl_vars.kernel, 7, sizeof(cl_mem), (void *) &X_clmem);
     clSetKernelArg(cl_vars.kernel, 8, sizeof(cl_mem), (void *) &Y_clmem);
-    // clSetKernelArg(cl_vars.kernel, 9, 1 * sizeof(int), NULL);
-    clSetKernelArg(cl_vars.kernel, 9, q * m * sizeof(float), NULL);
+    // clSetKernelArg(cl_vars.kernel, 9, q * sizeof(int), NULL);
+    // clSetKernelArg(cl_vars.kernel, 10, q * sizeof(float), NULL);
     
     
     size_t global_size[1];
     size_t local_size[1];
 
-    // local_size[0] = m;
-    // global_size[0] = n * local_size[0];
-
-    local_size[0] = std::max(m, q);
+    local_size[0] = m;
     global_size[0] = n * local_size[0];
+
+    // local_size[0] = std::max(m, q);
+    // global_size[0] = n * local_size[0];
 
     // std::cout << global_size[0] << " " << local_size[0] << std::endl;
 
@@ -516,34 +516,34 @@ void opencl_create_program_two_matrix_mul_os_is(CLVars& cl_vars,
 bool make_two_matrix_mul(CLVars& cl_vars) {
     //opencl_environment_definition_vortex(c    l_vars, "kernel_matrix_mul.pocl");
 
-    int n = rand() % 500 + 3, m = rand() % 100 + 3, k = rand() % 500 + 3, q = rand() % 100 + 3;
+    int n = rand() % 500 + 3, m = rand() % 500 + 3, k = rand() % 500 + 3, q = rand() % 500 + 3;
     // int n = rand() % 500 + 3, m = 10, k = rand() % 500 + 3, q = rand() % 500 + 3;
     // int n = 65, m = 87, k = 54, q = 74;
-    // int n = 4, m = 10, k = 5, q = 3;
+    // int n = 4, m = 4, k = 5, q = 3;
 
     // std::cout << n << " " << m << " " << k << " " << q << std::endl;
 
-    std::vector<float> A(n * k);
-    std::vector<float> B(k * m);
-    std::vector<float> C(m * q);
-    std::vector<float> X(n * m);
-    std::vector<float> Y(n * q);
+    std::vector<int> A(n * k);
+    std::vector<int> B(k * m);
+    std::vector<int> C(m * q);
+    std::vector<int> X(n * m);
+    std::vector<int> Y(n * q);
 
     for (size_t i = 0; i < n; i++) {
         for(size_t j = 0; j < k; ++j) {
-            A[i * k + j] = 1 * (float)(rand() % 3 + 1);
+            A[i * k + j] = 1 * (int)(rand() % 3 + 1);
         }
     }
 
     for (size_t i = 0; i < k; i++) {
         for(size_t j = 0; j < m; ++j) {
-            B[i * m + j] = 2 * (float)(rand() % 3 + 1);
+            B[i * m + j] = 2 * (int)(rand() % 3 + 1);
         }
     }
 
     for (size_t i = 0; i < m; i++) {
         for(size_t j = 0; j < q; ++j) {
-            C[i * q + j] = 3 * (float)(rand() % 3 + 1);
+            C[i * q + j] = 3 * (int)(rand() % 3 + 1);
         }
     }
 
