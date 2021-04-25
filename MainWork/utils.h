@@ -69,6 +69,23 @@ bool test_convolution(int n, int m, int n1, int m1,
 }
 
 template<typename T>
+bool test_result(const std::vector<T>& A,
+                 const std::vector<T>& B,
+                 float eps = 1e-7) {
+    if (A.size() != B.size())
+        return false;
+
+    for (int i = 0; i < A.size(); i++)  {
+        // std::cout << i << " " << A[i] << " " << B[i] << std::endl;
+        if (!float_compare(A[i], B[i], eps)) {
+            // std::cout << i << " " << A[i] << " " << B[i] << std::endl;
+            return false;
+        }
+    }
+    return true;
+}
+
+template<typename T>
 bool test_max_pool(int n, int m, int n1, int m1,
                    const std::vector<T>& A,
                    const std::vector<T>& C,
