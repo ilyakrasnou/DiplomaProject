@@ -854,11 +854,15 @@ void opencl_create_program_two_conv2d(CLVars& cl_vars,
     local_size1[0] = n2;
     global_size1[0] = n2 * local_size1[0];
 
+    std::cout << "1 " << n2 << " " << local_size1[0] << " " << global_size1[0] << std::endl;
+
     size_t global_size2[1];
     size_t local_size2[1];
 
     local_size2[0] = n3;
     global_size2[0] = n3 * local_size2[0];
+
+    std::cout << "2 " << n3 << " " << local_size2[0] << " " << global_size2[0] << std::endl;
 
     clock_t t;
     t = clock();
@@ -942,8 +946,13 @@ void opencl_create_program_two_conv2d_os_is(CLVars& cl_vars,
     size_t global_size1[1];
     size_t local_size1[1];
 
-    local_size1[0] = n3;
-    global_size1[0] = n3 * local_size1[0];
+    // local_size1[0] = n3;
+    // global_size1[0] = n3 * local_size1[0];
+
+    local_size1[0] = (n3 + 31) >> 5;
+    global_size1[0] = ((n3 + 31) >> 5) * local_size1[0];
+
+    std::cout << n3 << " " << local_size1[0] << " " << global_size1[0] << std::endl;
 
     clock_t t;
     t = clock();
@@ -973,10 +982,10 @@ void opencl_create_program_two_conv2d_os_is(CLVars& cl_vars,
 bool make_two_conv2D(CLVars& cl_vars) {
     opencl_environment_definition(cl_vars, "kernel_conv2d.cl");
 
-    int C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
+    int C1 = 1, C2 = 32, C3 = 32, F1 = 3, F2 = 3;
     // int C1 = 1, C2 = 1, C3 = 1, F1 = 3, F2 = 3;
-    int N1 = rand() % 100 + F1 + F2;
-    // int N1 = 3 + F1 + F2;
+    // int N1 = rand() % 1000 + F1 + F2 + 500;
+    int N1 = rand() % 50 + F1 + F2;
     // int N1 = rand() % 200 + 3, C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
     std::cout << "Start" << std::endl;
 
@@ -1021,7 +1030,7 @@ bool make_two_conv2D(CLVars& cl_vars) {
                                      D.data(), E_1.data(), 
                                      N1, C1, N2, C2, N3, C3, F1, F2);
     
-    opencl_create_program_two_conv2d_os_is(cl_vars, "two_conv2D_tranform",
+    opencl_create_program_two_conv2d_os_is(cl_vars, "two_conv2D_tranform_buffer",
                                            A.data(), B.data(), C_2.data(), 
                                            D.data(), E_2.data(), 
                                            N1, C1, N2, C2, N3, C3, F1, F2);
