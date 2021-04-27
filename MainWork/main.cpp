@@ -848,28 +848,35 @@ void opencl_create_program_two_conv2d(CLVars& cl_vars,
     clSetKernelArg(kernel2, 9, sizeof(cl_mem), (void *) &Filter2_clmem);
     clSetKernelArg(kernel2, 10, sizeof(cl_mem), (void *) &E_clmem);
 
-    size_t global_size1[1];
-    size_t local_size1[1];
+    size_t global_size1[2];
+    size_t local_size1[2];
 
-    local_size1[0] = n2;
+    local_size1[0] = c2;
+    local_size1[1] = 1;
     global_size1[0] = n2 * local_size1[0];
+    global_size1[1] = n2 * local_size1[1];
 
     std::cout << "1 " << n2 << " " << local_size1[0] << " " << global_size1[0] << std::endl;
 
-    size_t global_size2[1];
-    size_t local_size2[1];
+    size_t global_size2[2];
+    size_t local_size2[2];
 
-    local_size2[0] = n3;
+    local_size2[0] = c3;
+    local_size2[1] = 1;
     global_size2[0] = n3 * local_size2[0];
+    global_size2[1] = n3 * local_size2[1];
 
     std::cout << "2 " << n3 << " " << local_size2[0] << " " << global_size2[0] << std::endl;
 
     clock_t t;
     t = clock();
 
-    CL_CHECK(clEnqueueNDRangeKernel(cl_vars.command_queue, kernel1, 1, NULL,
+    CL_CHECK(clEnqueueNDRangeKernel(cl_vars.command_queue, kernel1, 2, NULL,
                                     global_size1, local_size1, 0, NULL, NULL));
-    CL_CHECK(clEnqueueNDRangeKernel(cl_vars.command_queue, kernel2, 1, NULL,
+
+    // CL_CHECK(clFinish(cl_vars.command_queue));
+
+    CL_CHECK(clEnqueueNDRangeKernel(cl_vars.command_queue, kernel2, 2, NULL,
                                     global_size2, local_size2, 0, NULL, NULL));
 
     CL_CHECK(clFinish(cl_vars.command_queue));
@@ -943,21 +950,28 @@ void opencl_create_program_two_conv2d_os_is(CLVars& cl_vars,
     clSetKernelArg(kernel1, 16, sizeof(cl_mem), (void *) &Filter2_clmem);
     clSetKernelArg(kernel1, 17, sizeof(cl_mem), (void *) &E_clmem);
 
-    size_t global_size1[1];
-    size_t local_size1[1];
+    size_t global_size1[2];
+    size_t local_size1[2];
 
-    // local_size1[0] = n3;
+    // local_size1[0] = c3;
+    // local_size1[1] = 1;
     // global_size1[0] = n3 * local_size1[0];
+    // global_size1[1] = n3 * local_size1[1];
 
-    local_size1[0] = (n3 + 31) >> 5;
-    global_size1[0] = ((n3 + 31) >> 5) * local_size1[0];
+    local_size1[0] = c3;
+    local_size1[1] = 1;
+    global_size1[0] = ((n3 + 31) >> 5)  * local_size1[0];
+    global_size1[1] = ((n3 + 31) >> 5) * local_size1[1];
+
+    // local_size1[0] = (n3 + 31) >> 5;
+    // global_size1[0] = ((n3 + 31) >> 5) * local_size1[0];
 
     std::cout << n3 << " " << local_size1[0] << " " << global_size1[0] << std::endl;
 
     clock_t t;
     t = clock();
 
-    CL_CHECK(clEnqueueNDRangeKernel(cl_vars.command_queue, kernel1, 1, NULL,
+    CL_CHECK(clEnqueueNDRangeKernel(cl_vars.command_queue, kernel1, 2, NULL,
                                     global_size1, local_size1, 0, NULL, NULL));
 
     CL_CHECK(clFinish(cl_vars.command_queue));
@@ -982,10 +996,11 @@ void opencl_create_program_two_conv2d_os_is(CLVars& cl_vars,
 bool make_two_conv2D(CLVars& cl_vars) {
     opencl_environment_definition(cl_vars, "kernel_conv2d.cl");
 
-    int C1 = 1, C2 = 32, C3 = 32, F1 = 3, F2 = 3;
-    // int C1 = 1, C2 = 1, C3 = 1, F1 = 3, F2 = 3;
+    // int C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
+    int C1 = 1, C2 = 1, C3 = 1, F1 = 3, F2 = 3;
     // int N1 = rand() % 1000 + F1 + F2 + 500;
-    int N1 = rand() % 50 + F1 + F2;
+    // int N1 = 5 + F1 + F2;
+    int N1 = rand() % 500 + F1 + F2;
     // int N1 = rand() % 200 + 3, C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
     std::cout << "Start" << std::endl;
 
