@@ -1,4 +1,4 @@
-#define BSIZE 32
+#define BSIZE 8
 #define id(c, x, y, C, X, Y) ((x) + (X) * ((y) + (Y) * (c)))
 #define f_id(a, c, x, y, A, C, X, Y) ((x) + (X) * ((y) + (Y) * ((c) + (C) * (a))))
 #define ReLU(v) (max(0.0f, (v)))
@@ -23,26 +23,31 @@ __kernel void conv2D_tranform(int N1y, int N1x, int C1,
                               const __global float *F,
                             //   const __global float *B,
                               __global float *O) {
-    const int n2y = get_group_id(0); // < N2y
-    const int n2x = get_group_id(1); // < N2x
+    const int t2y = get_group_id(0); // < N2y / 32
+    const int t2x = get_group_id(1); // < N2x / 32
     const int c2 = get_local_id(0);
 
-    // for (int c2 = 0; c2 < C2; c2++) {
-    // for (int n2y = 0; n2y < N2y; n2y++)
-    // for (int n2x = 0; n2x < N2x; n2x++) {
+    const int bsize = BSIZE;
 
-    // output width
-    // O[id(c2, n2x, n2y, C2, N2x, N2y)] = B[c2];
-    // O[id(c2, n2x, n2y, C2, N2x, N2y)] = 0;
-    float t = 0;
-
-    for (int c1 = 0; c1 < C1; c1++)
-    for (int fy = 0; fy < Fy; fy++)
-    for (int fx = 0; fx < Fx; fx++) {
-        t += I[id(c1, n2x+fx, n2y+fy, C1, N1x, N1y)] * F[f_id(c2, c1, fx, fy, C2, C1, Fx, Fy)];
+    for (int n2y = t2y*bsize; n2y < N2y && n2y < (t2y+1)*bsize; ++n2y)
+    for (int n2x = t2x*bsize; n2x < N2x && n2x < (t2x+1)*bsize; ++n2x) {
+        // for (int c2 = 0; c2 < C2; c2++) {
+        // for (int n2y = 0; n2y < N2y; n2y++)
+        // for (int n2x = 0; n2x < N2x; n2x++) {
+    
+        // output width
+        // O[id(c2, n2x, n2y, C2, N2x, N2y)] = B[c2];
+        // O[id(c2, n2x, n2y, C2, N2x, N2y)] = 0;
+        float t = 0;
+    
+        for (int c1 = 0; c1 < C1; c1++)
+        for (int fy = 0; fy < Fy; fy++)
+        for (int fx = 0; fx < Fx; fx++) {
+            t += I[id(c1, n2x+fx, n2y+fy, C1, N1x, N1y)] * F[f_id(c2, c1, fx, fy, C2, C1, Fx, Fy)];
+        }
+    
+        O[id(c2, n2x, n2y, C2, N2x, N2y)] = ReLU(t);
     }
-
-    O[id(c2, n2x, n2y, C2, N2x, N2y)] = ReLU(t);
 }
 
 __kernel void two_conv2D_tranform(int N1y, int N1x, int C1,
