@@ -78,7 +78,45 @@ bool test_result(const std::vector<T>& A,
     for (int i = 0; i < A.size(); i++)  {
         // std::cout << i << " " << A[i] << " " << B[i] << std::endl;
         if (!float_compare(A[i], B[i], eps)) {
-            // std::cout << i << " " << A[i] << " " << B[i] << std::endl;
+            std::cout << i << " " << A[i] << " " << B[i] << std::endl;
+            std::cout << i+1 << " " << A[i+1] << " " << B[i+1] << std::endl;
+            return false;
+        }
+    }
+    return true;
+}
+
+int id(int c, int x, int y, int C, int X, int Y);
+
+int f_id(int a, int c, int x, int y, int A, int C, int X, int Y);
+
+template<typename T>
+T ReLU(T v) { return ((v) > 0.0f ? (v) : 0.0f); }
+
+template<typename T>
+bool test_conv2D(int Ox, int Oy, 
+                 int Fx, int Fy,
+                 int C1, int C2,
+                 const std::vector<T>& I,
+                 const std::vector<T>& F,
+                 const std::vector<T>& O,
+                 float eps = 1e-3) {
+    for (int c2 = 0; c2 < C2; ++c2)
+    for (int oy = 0; oy < Oy; ++oy)
+    for (int ox = 0; ox < Ox; ++ox) {
+        float val = 0.0f;
+
+        for (int c1 = 0; c1 < C1; ++c1)
+        for (int fy = 0; fy < Fy; ++fy)
+        for (int fx = 0; fx < Fx; ++fx) {
+            val += I[id(c1, ox+fx, oy+fy, C1, Ox+Fx-1, Oy+Fy-1)] * F[f_id(c2, c1, fx, fy, C2, C1, Fx, Fy)];
+        }
+
+        val = ReLU(val);
+        
+        // std::cout << c2 << " " << ox << " " << oy << " " << O[id(c2, ox, oy, C2, Ox, Oy)] << " " << val << std::endl; 
+        if (!float_compare(O[id(c2, ox, oy, C2, Ox, Oy)], val, eps)) {
+            std::cout << c2 << " " << ox << " " << oy << " " << O[id(c2, ox, oy, C2, Ox, Oy)] << " " << val << std::endl; 
             return false;
         }
     }

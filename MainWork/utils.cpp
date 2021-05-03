@@ -231,6 +231,14 @@ bool read_kernel_binary(const char* filename,
     return true;
 }
 
+int id(int c, int x, int y, int C, int X, int Y) {
+    return ((x) + (X) * ((y) + (Y) * (c)));
+}
+
+int f_id(int a, int c, int x, int y, int A, int C, int X, int Y) {
+    return ((x) + (X) * ((y) + (Y) * ((c) + (C) * (a))));
+}
+
 bool float_compare(float lhs,
                    float rhs,
                    float eps) {

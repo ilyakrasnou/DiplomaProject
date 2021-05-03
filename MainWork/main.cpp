@@ -679,15 +679,7 @@ std::vector<float> make_max_pool(CLVars& cl_vars) {
     return C;
 }
 
-int id(int c, int x, int y, int C, int X, int Y) {
-    return x + X * (y + Y * c);
-}
-
-int f_id(int a, int c, int x, int y, int A, int C, int X, int Y) {
-    return x + X * (y + Y * (c + C * a));
-}
-
-#define BSIZE 8
+#define BSIZE 16
 
 void opencl_create_program_conv2d(CLVars& cl_vars,
                                   const char* kernel_name,
@@ -697,50 +689,137 @@ void opencl_create_program_conv2d(CLVars& cl_vars,
                                   int n1, int c1, int n2, int c2, int f)   {
     cl_mem A_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY, c1 * n1 * n1 * sizeof(float),
                                     NULL, &cl_vars.clStatus);
+    
+    if (cl_vars.clStatus != CL_SUCCESS || A_clmem == NULL) {
+        std::cout << "OpenCL can't allocate memory for A " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
+
     cl_mem Filter_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY, c2 * c1 * f * f * sizeof(float),
                                          NULL, &cl_vars.clStatus);
+
+    if (cl_vars.clStatus != CL_SUCCESS || Filter_clmem == NULL) {
+        std::cout << "OpenCL can't allocate memory for Filter " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
+
     cl_mem C_clmem = clCreateBuffer(cl_vars.context, CL_MEM_WRITE_ONLY, c2 * n2 * n2 * sizeof(float), NULL,
                                     &cl_vars.clStatus);
+
+    if (cl_vars.clStatus != CL_SUCCESS || C_clmem == NULL) {
+        std::cout << "OpenCL can't allocate memory for C " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
 
     clEnqueueWriteBuffer(cl_vars.command_queue, A_clmem, CL_TRUE, 0,
                                             c1 * n1 * n1  * sizeof(float), A, 0, NULL, NULL);
     clEnqueueWriteBuffer(cl_vars.command_queue, Filter_clmem, CL_TRUE, 0,
                                             c2 * c1 * f * f * sizeof(float), Filter, 0, NULL, NULL);
 
-    CL_CHECK(clBuildProgram(cl_vars.program, 1, cl_vars.device_list, NULL, NULL, NULL));
+    cl_vars.clStatus = clBuildProgram(cl_vars.program, 1, cl_vars.device_list, NULL, NULL, NULL);
+
+    if (cl_vars.clStatus != CL_SUCCESS) {
+        std::cout << "OpenCL can't build programm " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
 
     cl_vars.kernel = clCreateKernel(cl_vars.program, kernel_name, &cl_vars.clStatus);
 
-    clSetKernelArg(cl_vars.kernel, 0, sizeof(int), (void *) &n1);
-    clSetKernelArg(cl_vars.kernel, 1, sizeof(int), (void *) &n1);
-    clSetKernelArg(cl_vars.kernel, 2, sizeof(int), (void *) &c1);
-    clSetKernelArg(cl_vars.kernel, 3, sizeof(int), (void *) &n2);
-    clSetKernelArg(cl_vars.kernel, 4, sizeof(int), (void *) &n2);
-    clSetKernelArg(cl_vars.kernel, 5, sizeof(int), (void *) &c2);
-    clSetKernelArg(cl_vars.kernel, 6, sizeof(int), (void *) &f);
-    clSetKernelArg(cl_vars.kernel, 7, sizeof(int), (void *) &f);
-    clSetKernelArg(cl_vars.kernel, 8, sizeof(cl_mem), (void *) &A_clmem);
-    clSetKernelArg(cl_vars.kernel, 9, sizeof(cl_mem), (void *) &Filter_clmem);
-    clSetKernelArg(cl_vars.kernel, 10, sizeof(cl_mem), (void *) &C_clmem);
+    cl_vars.clStatus = clSetKernelArg(cl_vars.kernel, 0, sizeof(int), (void *) &n1);
+    if (cl_vars.clStatus != CL_SUCCESS) {
+        std::cout << "OpenCL can't pass arguments " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
+    cl_vars.clStatus = clSetKernelArg(cl_vars.kernel, 1, sizeof(int), (void *) &n1);
+    if (cl_vars.clStatus != CL_SUCCESS) {
+        std::cout << "OpenCL can't pass arguments " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
+    cl_vars.clStatus = clSetKernelArg(cl_vars.kernel, 2, sizeof(int), (void *) &c1);
+    if (cl_vars.clStatus != CL_SUCCESS) {
+        std::cout << "OpenCL can't pass arguments " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
+    cl_vars.clStatus = clSetKernelArg(cl_vars.kernel, 3, sizeof(int), (void *) &n2);
+    if (cl_vars.clStatus != CL_SUCCESS) {
+        std::cout << "OpenCL can't pass arguments " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
+    cl_vars.clStatus = clSetKernelArg(cl_vars.kernel, 4, sizeof(int), (void *) &n2);
+    if (cl_vars.clStatus != CL_SUCCESS) {
+        std::cout << "OpenCL can't pass arguments " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
+    cl_vars.clStatus = clSetKernelArg(cl_vars.kernel, 5, sizeof(int), (void *) &c2);
+    if (cl_vars.clStatus != CL_SUCCESS) {
+        std::cout << "OpenCL can't pass arguments " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
+    cl_vars.clStatus = clSetKernelArg(cl_vars.kernel, 6, sizeof(int), (void *) &f);
+    if (cl_vars.clStatus != CL_SUCCESS) {
+        std::cout << "OpenCL can't pass arguments " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
+    cl_vars.clStatus = clSetKernelArg(cl_vars.kernel, 7, sizeof(int), (void *) &f);
+    if (cl_vars.clStatus != CL_SUCCESS) {
+        std::cout << "OpenCL can't pass arguments " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
+    cl_vars.clStatus = clSetKernelArg(cl_vars.kernel, 8, sizeof(cl_mem), (void *) &A_clmem);
+    if (cl_vars.clStatus != CL_SUCCESS) {
+        std::cout << "OpenCL can't pass arguments " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
+    cl_vars.clStatus = clSetKernelArg(cl_vars.kernel, 9, sizeof(cl_mem), (void *) &Filter_clmem);
+    if (cl_vars.clStatus != CL_SUCCESS) {
+        std::cout << "OpenCL can't pass arguments " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
+    cl_vars.clStatus = clSetKernelArg(cl_vars.kernel, 10, sizeof(cl_mem), (void *) &C_clmem);
+
+    if (cl_vars.clStatus != CL_SUCCESS) {
+        std::cout << "OpenCL can't pass arguments " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
 
     size_t global_size1[2];
     size_t local_size1[2];
 
     local_size1[0] = c2;
+    // local_size1[0] = 1;
     local_size1[1] = 1;
-    global_size1[0] = ((n2 + BSIZE - 1) % BSIZE) * local_size1[0];
-    global_size1[1] = ((n2 + BSIZE - 1) % BSIZE) * local_size1[1];
+    global_size1[0] = ((n2 + BSIZE - 1) / BSIZE) * local_size1[0];
+    global_size1[1] = ((n2 + BSIZE - 1) / BSIZE) * local_size1[1];
+    // global_size1[0] = n2 * local_size1[0];
+    // global_size1[1] = n2 * local_size1[1];
+
+    std::cout << global_size1[0] << " " << global_size1[1] << std::endl;
 
     clock_t t;
     t = clock();
 
-    CL_CHECK(clEnqueueNDRangeKernel(cl_vars.command_queue, cl_vars.kernel, 2, NULL,
-                                    global_size1, local_size1, 0, NULL, NULL));
+    cl_vars.clStatus = clEnqueueNDRangeKernel(cl_vars.command_queue, cl_vars.kernel, 2, NULL,
+                                              global_size1, local_size1, 0, NULL, NULL);
 
-    CL_CHECK(clFinish(cl_vars.command_queue));
+    if (cl_vars.clStatus != CL_SUCCESS) {
+        std::cout << "OpenCL can't enqueue kernel " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
 
-    clEnqueueReadBuffer(cl_vars.command_queue, C_clmem, CL_TRUE, 0,
-                                            c2 * n2 * n2 * sizeof(float), C, 0, NULL, NULL);
+    cl_vars.clStatus = clFinish(cl_vars.command_queue);
+
+    if (cl_vars.clStatus != CL_SUCCESS) {
+        std::cout << "OpenCL can't finish queue " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
+
+    cl_vars.clStatus = clEnqueueReadBuffer(cl_vars.command_queue, C_clmem, CL_TRUE, 0,
+                                           c2 * n2 * n2 * sizeof(float), C, 0, NULL, NULL);
+
+    if (cl_vars.clStatus != CL_SUCCESS) {
+        std::cout << "OpenCL can't read from queue " << (int) cl_vars.clStatus << std::endl;
+        return;
+    }
 
     t = clock() - t;
     time_taken += ((double)t)/CLOCKS_PER_SEC; // in seconds
@@ -750,14 +829,16 @@ void opencl_create_program_conv2d(CLVars& cl_vars,
     clReleaseMemObject(C_clmem);
 }
 
-bool make_conv2D(CLVars& cl_vars) {
+bool make_conv2D(CLVars& cl_vars, int i) {
     opencl_environment_definition(cl_vars, "kernel_conv2d.cl");
 
-    int N1 = rand() % 1000 + 3, C1 = 1, C2 = 64, F = 3;
+    int C1 = 64, C2 = 64, F = 3;
+
+    int N1 = i + F;
 
     std::cout << "Start" << std::endl;
 
-    int N2 = N1 + F - 1;
+    int N2 = N1 - F + 1;
 
     std::vector<float> A(C1*N1*N1);
     std::vector<float> B(C2*C1*F*F);
@@ -784,13 +865,15 @@ bool make_conv2D(CLVars& cl_vars) {
     
     //print_matrix(C, n1, m1);
     std::cout << "Finished" << std::endl;
+
+    bool isPassed = test_conv2D(N2, N2, F, F, C1, C2, A, B, C);
     // assert(test_max_pool(n, m, n1, m1, A, C));
 
     printf("kernels took %f seconds to execute \n", time_taken);
 
     time_taken = 0.0f;
 
-    return true;
+    return isPassed;
 }
 
 void opencl_create_program_two_conv2d(CLVars& cl_vars,
@@ -856,12 +939,13 @@ void opencl_create_program_two_conv2d(CLVars& cl_vars,
     size_t local_size1[2];
 
     local_size1[0] = c2;
+    // local_size1[0] = 1;
     local_size1[1] = 1;
-    // global_size1[0] = n2 * local_size1[0];
-    // global_size1[1] = n2 * local_size1[1];
+    global_size1[0] = n2 * local_size1[0];
+    global_size1[1] = n2 * local_size1[1];
     
-    global_size1[0] = ((n2 + BSIZE - 1) % BSIZE) * local_size1[0];
-    global_size1[1] = ((n2 + BSIZE - 1) % BSIZE) * local_size1[1];
+    // global_size1[0] = ((n2 + BSIZE - 1) / BSIZE) * local_size1[0];
+    // global_size1[1] = ((n2 + BSIZE - 1) / BSIZE) * local_size1[1];
 
     std::cout << "1 " << n2 << " " << local_size1[0] << " " << global_size1[0] << std::endl;
 
@@ -869,9 +953,12 @@ void opencl_create_program_two_conv2d(CLVars& cl_vars,
     size_t local_size2[2];
 
     local_size2[0] = c3;
+    // local_size2[0] = 1;
     local_size2[1] = 1;
-    global_size2[0] = ((n3 + BSIZE - 1) % BSIZE) * local_size2[0];
-    global_size2[1] = ((n3 + BSIZE - 1) % BSIZE) * local_size2[1];
+    global_size2[0] = n3 * local_size2[0];
+    global_size2[1] = n3 * local_size2[1];
+    // global_size2[0] = ((n3 + BSIZE - 1) / BSIZE) * local_size2[0];
+    // global_size2[1] = ((n3 + BSIZE - 1) / BSIZE) * local_size2[1];
 
     std::cout << "2 " << n3 << " " << local_size2[0] << " " << global_size2[0] << std::endl;
 
@@ -965,10 +1052,11 @@ void opencl_create_program_two_conv2d_os_is(CLVars& cl_vars,
     // global_size1[0] = n3 * local_size1[0];
     // global_size1[1] = n3 * local_size1[1];
 
-    local_size1[0] = c3;
+    // local_size1[0] = c3;
+    local_size1[0] = std::max(c2, c3);
     local_size1[1] = 1;
-    global_size1[0] = ((n3 + BSIZE - 1) % BSIZE)  * local_size1[0];
-    global_size1[1] = ((n3 + BSIZE - 1) % BSIZE) * local_size1[1];
+    global_size1[0] = ((n3 + BSIZE - 1) / BSIZE)  * local_size1[0];
+    global_size1[1] = ((n3 + BSIZE - 1) / BSIZE) * local_size1[1];
 
     // local_size1[0] = (n3 + 31) >> 5;
     // global_size1[0] = ((n3 + 31) >> 5) * local_size1[0];
@@ -1000,13 +1088,104 @@ void opencl_create_program_two_conv2d_os_is(CLVars& cl_vars,
     clReleaseMemObject(E_clmem);
 }
 
+void opencl_create_program_two_conv2d_fusion(CLVars& cl_vars,
+                                             const char* kernel_name,
+                                             float *A,
+                                             float *Filter1,
+                                             float *C,
+                                             float *Filter2,
+                                             float *E,
+                                             int n1, int c1, 
+                                             int n2, int c2, 
+                                             int n3, int c3, 
+                                             int f1, int f2) {
+    cl_mem A_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY, c1 * n1 * n1 * sizeof(float),
+                                    NULL, &cl_vars.clStatus);
+    cl_mem Filter1_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY, c2 * c1 * f1 * f1 * sizeof(float),
+                                          NULL, &cl_vars.clStatus);
+    cl_mem C_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_WRITE, c2 * n2 * n2 * sizeof(float), NULL,
+                                    &cl_vars.clStatus);
+    cl_mem Filter2_clmem = clCreateBuffer(cl_vars.context, CL_MEM_READ_ONLY, c3 * c2 * f2 * f2 * sizeof(float),
+                                          NULL, &cl_vars.clStatus);
+    cl_mem E_clmem = clCreateBuffer(cl_vars.context, CL_MEM_WRITE_ONLY, c3 * n3 * n3 * sizeof(float), NULL,
+                                    &cl_vars.clStatus);
+
+    clEnqueueWriteBuffer(cl_vars.command_queue, A_clmem, CL_TRUE, 0,
+                         c1 * n1 * n1  * sizeof(float), A, 0, NULL, NULL);
+    clEnqueueWriteBuffer(cl_vars.command_queue, Filter1_clmem, CL_TRUE, 0,
+                         c2 * c1 * f1 * f1 * sizeof(float), Filter1, 0, NULL, NULL);
+    clEnqueueWriteBuffer(cl_vars.command_queue, Filter2_clmem, CL_TRUE, 0,
+                         c3 * c2 * f2 * f2 * sizeof(float), Filter2, 0, NULL, NULL);
+
+    // CL_CHECK(clBuildProgram(cl_vars.program, 1, cl_vars.device_list, NULL, NULL, NULL));
+
+    cl_kernel kernel1 = clCreateKernel(cl_vars.program, kernel_name, &cl_vars.clStatus);
+
+    clSetKernelArg(kernel1, 0, sizeof(int), (void *) &n1);
+    clSetKernelArg(kernel1, 1, sizeof(int), (void *) &n1);
+    clSetKernelArg(kernel1, 2, sizeof(int), (void *) &c1);
+    clSetKernelArg(kernel1, 3, sizeof(int), (void *) &n2);
+    clSetKernelArg(kernel1, 4, sizeof(int), (void *) &n2);
+    clSetKernelArg(kernel1, 5, sizeof(int), (void *) &c2);
+    clSetKernelArg(kernel1, 6, sizeof(int), (void *) &n3);
+    clSetKernelArg(kernel1, 7, sizeof(int), (void *) &n3);
+    clSetKernelArg(kernel1, 8, sizeof(int), (void *) &c3);
+    clSetKernelArg(kernel1, 9, sizeof(int), (void *) &f1);
+    clSetKernelArg(kernel1, 10, sizeof(int), (void *) &f1);
+    clSetKernelArg(kernel1, 11, sizeof(int), (void *) &f2);
+    clSetKernelArg(kernel1, 12, sizeof(int), (void *) &f2);
+    clSetKernelArg(kernel1, 13, sizeof(cl_mem), (void *) &A_clmem);
+    clSetKernelArg(kernel1, 14, sizeof(cl_mem), (void *) &Filter1_clmem);
+    clSetKernelArg(kernel1, 15, sizeof(cl_mem), (void *) &C_clmem);
+    clSetKernelArg(kernel1, 16, sizeof(cl_mem), (void *) &Filter2_clmem);
+    clSetKernelArg(kernel1, 17, sizeof(cl_mem), (void *) &E_clmem);
+
+    size_t global_size1[2];
+    size_t local_size1[2];
+
+    // local_size1[0] = 1;
+    local_size1[0] = c3;
+    local_size1[1] = 1;
+
+    int size = BSIZE - f2 + 1;
+    global_size1[0] = ((n2 + size - 1) / size)  * local_size1[0];
+    global_size1[1] = ((n2 + size - 1) / size) * local_size1[1];
+
+    std::cout << n3 << " " << size << " " << local_size1[0] << " " << global_size1[0] << std::endl;
+
+    clock_t t;
+    t = clock();
+
+    CL_CHECK(clEnqueueNDRangeKernel(cl_vars.command_queue, kernel1, 2, NULL,
+                                    global_size1, local_size1, 0, NULL, NULL));
+
+    CL_CHECK(clFinish(cl_vars.command_queue));
+
+    CL_CHECK(clEnqueueReadBuffer(cl_vars.command_queue, C_clmem, CL_TRUE, 0,
+                                 c2 * n2 * n2 * sizeof(float), C, 0, NULL, NULL));
+    
+    CL_CHECK(clEnqueueReadBuffer(cl_vars.command_queue, E_clmem, CL_TRUE, 0,
+                                 c3 * n3 * n3 * sizeof(float), E, 0, NULL, NULL));
+
+    t = clock() - t;
+    printf("Clear execution time %f miliseconds \n", (double)t);
+    time_taken += ((double)t)/CLOCKS_PER_SEC; // in seconds
+
+    clReleaseMemObject(A_clmem);
+    clReleaseMemObject(Filter1_clmem);
+    clReleaseMemObject(C_clmem);
+    clReleaseMemObject(Filter2_clmem);
+    clReleaseMemObject(E_clmem);
+}
+
+
 bool make_two_conv2D(CLVars& cl_vars) {
     opencl_environment_definition(cl_vars, "kernel_conv2d.cl");
 
     int C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
     // int C1 = 1, C2 = 1, C3 = 1, F1 = 3, F2 = 3;
-    // int N1 = rand() % 1000 + F1 + F2 + 500;
-    int N1 = 1500 + F1 + F2;
+    // int N1 = rand() % 100 + F1 + F2 + 400;
+    int N1 = 200 + F1 + F2;
     // int N1 = rand() % 350 + F1 + F2;
     // int N1 = rand() % 200 + 3, C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
     std::cout << "Start" << std::endl;
@@ -1051,21 +1230,33 @@ bool make_two_conv2D(CLVars& cl_vars) {
                                      A.data(), B.data(), C_1.data(), 
                                      D.data(), E_1.data(), 
                                      N1, C1, N2, C2, N3, C3, F1, F2);
+
     
-    opencl_create_program_two_conv2d_os_is(cl_vars, "two_conv2D_tranform_buffer",
-                                           A.data(), B.data(), C_2.data(), 
-                                           D.data(), E_2.data(), 
-                                           N1, C1, N2, C2, N3, C3, F1, F2);
+    opencl_create_program_two_conv2d_fusion(cl_vars, "two_conv2D_fusion",
+                                            A.data(), B.data(), C_2.data(), 
+                                            D.data(), E_2.data(), 
+                                            N1, C1, N2, C2, N3, C3, F1, F2);
+    
+    // opencl_create_program_two_conv2d_os_is(cl_vars, "two_conv2D_tranform_buffer",
+    //                                        A.data(), B.data(), C_2.data(), 
+    //                                        D.data(), E_2.data(), 
+    //                                        N1, C1, N2, C2, N3, C3, F1, F2);
 
     //print_matrix(C, n1, m1);
     std::cout << "Finished" << std::endl;
     // assert(test_max_pool(n, m, n1, m1, A, C));
 
     printf("kernels took %f seconds to execute \n", time_taken);
-
     time_taken = 0.0f;
 
-    return test_result(E_1, E_2);
+    bool isPassed = true;
+
+    // isPassed &= test_conv2D(N2, N2, F1, F1, C1, C2, A, B, C_1, 1e-1);
+    // isPassed &= test_conv2D(N3, N3, F2, F2, C2, C3, C_1, D, E_1, 1e-1);
+
+    isPassed &= test_result(E_1, E_2, 1e-1);
+
+    return isPassed;
 }
 
 int main (int argc, char **argv) {
@@ -1075,7 +1266,7 @@ int main (int argc, char **argv) {
     bool isPassed = true;
     CLVars cl_vars;
 
-    for(int i = 0; i < 1; ++i) {
+    for(int i = 100; i < 200; i += 100) {
         isPassed &= make_two_conv2D(cl_vars);
         // cl_clean(cl_vars);
     }
