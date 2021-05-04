@@ -1117,10 +1117,6 @@ void opencl_create_program_two_conv2d_fusion(CLVars& cl_vars,
     clEnqueueWriteBuffer(cl_vars.command_queue, Filter2_clmem, CL_TRUE, 0,
                          c3 * c2 * f2 * f2 * sizeof(float), Filter2, 0, NULL, NULL);
 
-    int size = BSIZE - f2 + 1;
-    int c_size = 1024 / BSIZE / BSIZE;
-    int Tc = (std::max(c2, c3) + c_size) / c_size;
-
     // CL_CHECK(clBuildProgram(cl_vars.program, 1, cl_vars.device_list, NULL, NULL, NULL));
 
     cl_kernel kernel1 = clCreateKernel(cl_vars.program, kernel_name, &cl_vars.clStatus);
@@ -1138,15 +1134,11 @@ void opencl_create_program_two_conv2d_fusion(CLVars& cl_vars,
     clSetKernelArg(kernel1, 10, sizeof(int), (void *) &f1);
     clSetKernelArg(kernel1, 11, sizeof(int), (void *) &f2);
     clSetKernelArg(kernel1, 12, sizeof(int), (void *) &f2);
-    clSetKernelArg(kernel1, 13, sizeof(int), (void *) &size);
-    clSetKernelArg(kernel1, 14, sizeof(int), (void *) &size);
-    clSetKernelArg(kernel1, 15, sizeof(int), (void *) &Tc);
-    clSetKernelArg(kernel1, 16, sizeof(cl_mem), (void *) &A_clmem);
-    clSetKernelArg(kernel1, 17, sizeof(cl_mem), (void *) &Filter1_clmem);
-    clSetKernelArg(kernel1, 18, sizeof(cl_mem), (void *) &C_clmem);
-    clSetKernelArg(kernel1, 19, sizeof(cl_mem), (void *) &Filter2_clmem);
-    clSetKernelArg(kernel1, 20, sizeof(cl_mem), (void *) &E_clmem);
-    clSetKernelArg(kernel1, 21, c2*BSIZE*BSIZE*sizeof(float), NULL);
+    clSetKernelArg(kernel1, 13, sizeof(cl_mem), (void *) &A_clmem);
+    clSetKernelArg(kernel1, 14, sizeof(cl_mem), (void *) &Filter1_clmem);
+    clSetKernelArg(kernel1, 15, sizeof(cl_mem), (void *) &C_clmem);
+    clSetKernelArg(kernel1, 16, sizeof(cl_mem), (void *) &Filter2_clmem);
+    clSetKernelArg(kernel1, 17, sizeof(cl_mem), (void *) &E_clmem);
 
     size_t global_size1[2];
     size_t local_size1[2];
@@ -1156,6 +1148,7 @@ void opencl_create_program_two_conv2d_fusion(CLVars& cl_vars,
     local_size1[1] = BSIZE;
     // local_size1[2] = c_size;
 
+    int size = BSIZE - f2 + 1;
     global_size1[0] = ((n2 + size - 1) / size)  * local_size1[0];
     global_size1[1] = ((n2 + size - 1) / size) * local_size1[1];
     // global_size1[2] = 1 * local_size1[2];
@@ -1195,7 +1188,7 @@ bool make_two_conv2D(CLVars& cl_vars) {
     int C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
     // int C1 = 1, C2 = 1, C3 = 1, F1 = 3, F2 = 3;
     // int N1 = rand() % 100 + F1 + F2 + 400;
-    int N1 = 300 + F1 + F2;
+    int N1 = 200 + F1 + F2;
     // int N1 = rand() % 350 + F1 + F2;
     // int N1 = rand() % 200 + 3, C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
     std::cout << "Start" << std::endl;

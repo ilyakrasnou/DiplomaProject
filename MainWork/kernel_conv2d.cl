@@ -55,25 +55,27 @@ __kernel void two_conv2D_fusion(int N1y, int N1x, int C1,
                                 int N3y, int N3x, int C3,
                                 int F1y, int F1x, 
                                 int F2y, int F2x, 
-                                int Tx,  int Ty,  int Tc,
                                 const __global float *I,
                                 const __global float *F1,
                                 //   const __global float *B1,
                                 __global float *O1,
                                 const __global float *F2,
                                 // const __global float *B2,
-                                __global float *O2,
-                                __local float *buffer) {    
-    const int ty = get_group_id(0); // < N3y / Tx
-    const int tx = get_group_id(1); // < N3x / Ty
-    const int sy = get_local_id(0); // < BSIZE
-    const int sx = get_local_id(1); // < BSIZE
+                                __global float *O2) {
+    const int sizeY = BSIZE - F2y + 1;
+    const int sizeX = BSIZE - F2x + 1;
+    
+    const int ty = get_group_id(0); // < N3y / sizeY
+    const int tx = get_group_id(1); // < N3x / sizeX
+    const int c3 = get_local_id(0); // < C3
 
-    // const int tc = get_local_id(2); // < max(C2, C3) / Tc
-    // const int c0 = get_local_id(2); // < C2
+    const int n3y_bound = min(N3y, (ty+1)*sizeY);
+    const int n3x_bound = min(N3x, (tx+1)*sizeX);
 
-    const int n2y = ty * Ty + sy;
-    const int n2x = tx * Tx + sx;
+    const int n3y_0 = ty * sizeY;
+    const int n3x_0 = tx * sizeX;
+    float t = 0;
+    float buffer[BSIZE][BSIZE];
 
     if (n2y < N2y && n2x < N2x) {
         for (int c2 = 0; c2 < C2; ++c2) {
