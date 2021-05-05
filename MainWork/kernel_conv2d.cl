@@ -55,57 +55,65 @@ __kernel void two_conv2D_fusion(int N1y, int N1x, int C1,
                                 int N3y, int N3x, int C3,
                                 int F1y, int F1x, 
                                 int F2y, int F2x, 
+                                int Tx,  int Ty,
                                 const __global float *I,
                                 const __global float *F1,
                                 //   const __global float *B1,
                                 __global float *O1,
                                 const __global float *F2,
                                 // const __global float *B2,
-                                __global float *O2) {
-    const int sizeY = BSIZE - F2y + 1;
-    const int sizeX = BSIZE - F2x + 1;
-    
-    const int ty = get_group_id(0); // < N3y / sizeY
-    const int tx = get_group_id(1); // < N3x / sizeX
+                                __global float *O2) {    
+    const int ty = get_group_id(0); // < N3y / Tx
+    const int tx = get_group_id(1); // < N3x / Ty
     const int c3 = get_local_id(0); // < C3
 
-    const int n3y_bound = min(N3y, (ty+1)*sizeY);
-    const int n3x_bound = min(N3x, (tx+1)*sizeX);
+    const int n3y_bound = min(N3y, (ty+1)*Ty);
+    const int n3x_bound = min(N3x, (tx+1)*Ty);
 
-    const int n3y_0 = ty * sizeY;
-    const int n3x_0 = tx * sizeX;
+    const int n3y_0 = ty * Ty;
+    const int n3x_0 = tx * Tx;
     float t = 0;
     float buffer[BSIZE][BSIZE];
 
-    if (n2y < N2y && n2x < N2x) {
-        for (int c2 = 0; c2 < C2; ++c2) {
-            float t = 0;
+    // for (int by = 0; by < n2y_bound - n2y_0 - F2y + 1; ++by)
+    // for (int bx = 0; bx < n2x_bound - n2x_0 - F2x + 1; ++bx) {
+    //     O2[id(c3, n2x_0 + bx, n2y_0 + by, C3, N3x, N3y)] = 0;   
+    // }
 
+    for (int c2 = 0; c2 < C2; ++c2) {
+        // calculate intermediate layer
+        for (int n2y = n3y_0; n2y < n3y_bound + F2y - 1; ++n2y)
+        for (int n2x = n3x_0; n2x < n3x_bound + F2x - 1; ++n2x) {
+            t = 0;
+        
             for (int c1 = 0; c1 < C1; ++c1)
             for (int f1y = 0; f1y < F1y; ++f1y)
             for (int f1x = 0; f1x < F1x; ++f1x) {
                 t += I[id(c1, n2x+f1x, n2y+f1y, C1, N1x, N1y)] * F1[f_id(c2, c1, f1x, f1y, C2, C1, F1x, F1y)];
             }
+        
+            buffer[n2y-n3y_0][n2x-n3x_0] = ReLU(t);
+        }
 
-            buffer[id(c2, sx, sy, C2, BSIZE, BSIZE)] = ReLU(t);
+        for (int by = 0; by < n3y_bound - n3y_0; ++by)
+        for (int bx = 0; bx < n3x_bound - n3x_0; ++bx) {
+            t = 0;
+
+            for (int f2y = 0; f2y < F2y; ++f2y)
+            for (int f2x = 0; f2x < F2x; ++f2x) {
+                t += buffer[by+f2y][bx+f2x] * F2[f_id(c3, c2, f2x, f2y, C3, C2, F2x, F2y)];
+            }
+
+            if (c2 == 0)
+                O2[id(c3, n3x_0 + bx, n3y_0 + by, C3, N3x, N3y)] = 0;
+
+            O2[id(c3, n3x_0 + bx, n3y_0 + by, C3, N3x, N3y)] += t;   
         }
     }
 
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    // n3x = n2x, n3y = n3y
-    if (sy < Ty && sx < Tx && n2x < N3x && n2y < N3y) {
-        for (int c3 = 0; c3 < C3; ++c3) {
-            float t = 0;
-
-            for (int c2 = 0; c2 < C2; ++c2)
-            for (int f2y = 0; f2y < F2y; ++f2y)
-            for (int f2x = 0; f2x < F2x; ++f2x) {
-                t += buffer[id(c2, sx+f2x, sy+f2y, C2, BSIZE, BSIZE)] * F2[f_id(c3, c2, f2x, f2y, C3, C2, F2x, F2y)];
-            }
-
-            O2[id(c3, n2x, n2y, C3, N3x, N3y)] = ReLU(t);
-        }
+    for (int by = 0; by < n3y_bound - n3y_0; ++by)
+    for (int bx = 0; bx < n3x_bound - n3x_0; ++bx) {
+        O2[id(c3, n3x_0 + bx, n3y_0 + by, C3, N3x, N3y)] = ReLU(O2[id(c3, n3x_0 + bx, n3y_0 + by, C3, N3x, N3y)]);   
     }
 }
 

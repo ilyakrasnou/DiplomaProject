@@ -102,6 +102,7 @@ void opencl_environment_definition(CLVars& cl_vars,
     cl_vars.device_list = (cl_device_id *) malloc(sizeof(cl_device_id) * cl_vars.num_devices);
     clGetDeviceIDs(cl_vars.platforms[1], CL_DEVICE_TYPE_GPU, cl_vars.num_devices, cl_vars.device_list, NULL);
     cl_vars.context = clCreateContext(NULL, cl_vars.num_devices, cl_vars.device_list, NULL, NULL, &cl_vars.clStatus);
+    // cl_vars.command_queue = clCreateCommandQueue(cl_vars.context, cl_vars.device_list[0], CL_QUEUE_PROFILING_ENABLE, &cl_vars.clStatus);
     cl_vars.command_queue = clCreateCommandQueue(cl_vars.context, cl_vars.device_list[0], 0, &cl_vars.clStatus);
 
     // print device name
@@ -941,11 +942,11 @@ void opencl_create_program_two_conv2d(CLVars& cl_vars,
     local_size1[0] = c2;
     // local_size1[0] = 1;
     local_size1[1] = 1;
-    global_size1[0] = n2 * local_size1[0];
-    global_size1[1] = n2 * local_size1[1];
+    // global_size1[0] = n2 * local_size1[0];
+    // global_size1[1] = n2 * local_size1[1];
     
-    // global_size1[0] = ((n2 + BSIZE - 1) / BSIZE) * local_size1[0];
-    // global_size1[1] = ((n2 + BSIZE - 1) / BSIZE) * local_size1[1];
+    global_size1[0] = ((n2 + BSIZE - 1) / BSIZE) * local_size1[0];
+    global_size1[1] = ((n2 + BSIZE - 1) / BSIZE) * local_size1[1];
 
     std::cout << "1 " << n2 << " " << local_size1[0] << " " << global_size1[0] << std::endl;
 
@@ -955,10 +956,10 @@ void opencl_create_program_two_conv2d(CLVars& cl_vars,
     local_size2[0] = c3;
     // local_size2[0] = 1;
     local_size2[1] = 1;
-    global_size2[0] = n3 * local_size2[0];
-    global_size2[1] = n3 * local_size2[1];
-    // global_size2[0] = ((n3 + BSIZE - 1) / BSIZE) * local_size2[0];
-    // global_size2[1] = ((n3 + BSIZE - 1) / BSIZE) * local_size2[1];
+    // global_size2[0] = n3 * local_size2[0];
+    // global_size2[1] = n3 * local_size2[1];
+    global_size2[0] = ((n3 + BSIZE - 1) / BSIZE) * local_size2[0];
+    global_size2[1] = ((n3 + BSIZE - 1) / BSIZE) * local_size2[1];
 
     std::cout << "2 " << n3 << " " << local_size2[0] << " " << global_size2[0] << std::endl;
 
@@ -1052,8 +1053,8 @@ void opencl_create_program_two_conv2d_os_is(CLVars& cl_vars,
     // global_size1[0] = n3 * local_size1[0];
     // global_size1[1] = n3 * local_size1[1];
 
-    // local_size1[0] = c3;
-    local_size1[0] = std::max(c2, c3);
+    local_size1[0] = c3;
+    // local_size1[0] = std::max(c2, c3);
     local_size1[1] = 1;
     global_size1[0] = ((n3 + BSIZE - 1) / BSIZE)  * local_size1[0];
     global_size1[1] = ((n3 + BSIZE - 1) / BSIZE) * local_size1[1];
@@ -1117,7 +1118,9 @@ void opencl_create_program_two_conv2d_fusion(CLVars& cl_vars,
     clEnqueueWriteBuffer(cl_vars.command_queue, Filter2_clmem, CL_TRUE, 0,
                          c3 * c2 * f2 * f2 * sizeof(float), Filter2, 0, NULL, NULL);
 
-    // CL_CHECK(clBuildProgram(cl_vars.program, 1, cl_vars.device_list, NULL, NULL, NULL));
+    int size = BSIZE - f2 + 1;
+
+    CL_CHECK(clBuildProgram(cl_vars.program, 1, cl_vars.device_list, NULL, NULL, NULL));
 
     cl_kernel kernel1 = clCreateKernel(cl_vars.program, kernel_name, &cl_vars.clStatus);
 
@@ -1134,27 +1137,25 @@ void opencl_create_program_two_conv2d_fusion(CLVars& cl_vars,
     clSetKernelArg(kernel1, 10, sizeof(int), (void *) &f1);
     clSetKernelArg(kernel1, 11, sizeof(int), (void *) &f2);
     clSetKernelArg(kernel1, 12, sizeof(int), (void *) &f2);
-    clSetKernelArg(kernel1, 13, sizeof(cl_mem), (void *) &A_clmem);
-    clSetKernelArg(kernel1, 14, sizeof(cl_mem), (void *) &Filter1_clmem);
-    clSetKernelArg(kernel1, 15, sizeof(cl_mem), (void *) &C_clmem);
-    clSetKernelArg(kernel1, 16, sizeof(cl_mem), (void *) &Filter2_clmem);
-    clSetKernelArg(kernel1, 17, sizeof(cl_mem), (void *) &E_clmem);
+    clSetKernelArg(kernel1, 13, sizeof(int), (void *) &size);
+    clSetKernelArg(kernel1, 14, sizeof(int), (void *) &size);
+    clSetKernelArg(kernel1, 15, sizeof(cl_mem), (void *) &A_clmem);
+    clSetKernelArg(kernel1, 16, sizeof(cl_mem), (void *) &Filter1_clmem);
+    clSetKernelArg(kernel1, 17, sizeof(cl_mem), (void *) &C_clmem);
+    clSetKernelArg(kernel1, 18, sizeof(cl_mem), (void *) &Filter2_clmem);
+    clSetKernelArg(kernel1, 19, sizeof(cl_mem), (void *) &E_clmem);
 
     size_t global_size1[2];
     size_t local_size1[2];
 
     // local_size1[0] = 1;
-    local_size1[0] = BSIZE;
-    local_size1[1] = BSIZE;
-    // local_size1[2] = c_size;
+    local_size1[0] = c3;
+    local_size1[1] = 1;
 
-    int size = BSIZE - f2 + 1;
     global_size1[0] = ((n2 + size - 1) / size)  * local_size1[0];
     global_size1[1] = ((n2 + size - 1) / size) * local_size1[1];
-    // global_size1[2] = 1 * local_size1[2];
 
-    std::cout << "Local size " << n3 << " " << size << " " << local_size1[0] << " " << local_size1[1] << std::endl;
-    std::cout << "Global size " << n3 << " " << size << " " << global_size1[0] << " " << global_size1[1] << std::endl;
+    std::cout << n3 << " " << size << " " << local_size1[0] << " " << global_size1[0] << std::endl;
 
     clock_t t;
     t = clock();
@@ -1188,7 +1189,7 @@ bool make_two_conv2D(CLVars& cl_vars) {
     int C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
     // int C1 = 1, C2 = 1, C3 = 1, F1 = 3, F2 = 3;
     // int N1 = rand() % 100 + F1 + F2 + 400;
-    int N1 = 200 + F1 + F2;
+    int N1 = 300 + F1 + F2;
     // int N1 = rand() % 350 + F1 + F2;
     // int N1 = rand() % 200 + 3, C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
     std::cout << "Start" << std::endl;
@@ -1236,8 +1237,8 @@ bool make_two_conv2D(CLVars& cl_vars) {
 
     
     // opencl_create_program_two_conv2d_fusion(cl_vars, "two_conv2D_fusion",
-    //                                         A.data(), B.data(), C_2.data(), 
-    //                                         D.data(), E_2.data(), 
+    //                                         A.data(), B.data(), C_1.data(), 
+    //                                         D.data(), E_1.data(), 
     //                                         N1, C1, N2, C2, N3, C3, F1, F2);
     
     opencl_create_program_two_conv2d_os_is(cl_vars, "two_conv2D_tranform_buffer",
