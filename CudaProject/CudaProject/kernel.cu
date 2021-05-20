@@ -6,12 +6,14 @@
 #include <stdio.h>
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 #define BSIZE 16
 #define id(c, x, y, C, X, Y) ((x) + (X) * ((y) + (Y) * (c)))
 #define f_id(a, c, x, y, A, C, X, Y) ((x) + (X) * ((y) + (Y) * ((c) + (C) * (a))))
 #define ReLU(v) (max((v), 0.0f))
+
 
 cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
 
@@ -24,22 +26,24 @@ __global__ void addKernel(int *c, const int *a, const int *b)
 __global__ void convolution_simple(int N1y, int N1x, int C1,
 	                               int N2y, int N2x, int C2,
 	                               int Fy, int Fx,
+	                               int Ty, int Tx,
 	                               const float *I,
 	                               const float *F,
 	                               // const float *B,
 	                               float *O) {
-	const int ty = blockIdx.x; // < N2y / BSIZE
-	const int tx = blockIdx.y; // < N2x / BSIZE
+	const int ty = blockIdx.x; // < N2y / Ty
+	const int tx = blockIdx.y; // < N2x / Tx
 	const int c2 = threadIdx.x;
 
-	const int n2y_bound = min(N2y, (ty + 1)*BSIZE);
-	const int n2x_bound = min(N2x, (tx + 1)*BSIZE);
+	const int n2y_bound = min(N2y, (ty + 1)*Ty);
+	const int n2x_bound = min(N2x, (tx + 1)*Tx);
 
-	const int n2y_0 = ty * BSIZE;
-	const int n2x_0 = tx * BSIZE;
+	const int n2y_0 = ty * Ty;
+	const int n2x_0 = tx * Tx;
 
 	float t;
 
+	//for (int c2 = 0; c2 < C2; ++c2)
 	for (int n2y = n2y_0; n2y < n2y_bound; ++n2y)
 	for (int n2x = n2x_0; n2x < n2x_bound; ++n2x) {
 		t = 0;
@@ -122,7 +126,7 @@ __global__ void convolution_fusion(int N1y, int N1x, int C1,
 //	                              float *O2) {
 //	const int ty = blockIdx.x; // < N3y / 32 
 //	const int tx = blockIdx.y; // < N3x / 32
-//	const int c3 = threadIdx.x;
+//	//const int c3 = threadIdx.x;
 //
 //	const int n3y_bound = min(N3y, (ty + 1)*BSIZE);
 //	const int n3x_bound = min(N3x, (tx + 1)*BSIZE);
@@ -133,13 +137,18 @@ __global__ void convolution_fusion(int N1y, int N1x, int C1,
 //	if (n3y_0 >= N3y || n3x_0 >= N3x)
 //		return;
 //
-//	float buffer[BSIZE][BSIZE];
+//	//float buffer[BSIZE][BSIZE];
 //	float t;
 //
 //	// clear buffer
+//	/*for (int i = 0; i < n3y_bound - n3y_0; ++i)
+//		for (int j = 0; j < n3x_bound - n3x_0; ++j)
+//			buffer[i][j] = 0;*/
+//
+//	for (int c3 = 0; c3 < C3; ++c3)
 //	for (int i = 0; i < n3y_bound - n3y_0; ++i)
 //	for (int j = 0; j < n3x_bound - n3x_0; ++j)
-//		buffer[i][j] = 0;
+//		O2[id(c3, n3x_0 + j, n3y_0 + i, C3, N3x, N3y)] = 0;
 //
 //	// calculate buffer
 //	for (int c2 = 0; c2 < C2; c2++)
@@ -155,30 +164,35 @@ __global__ void convolution_fusion(int N1y, int N1x, int C1,
 //		for (int f1x = 0; f1x < F1x; f1x++) {
 //			t += I[id(c1, n2x + f1x, n2y + f1y, C1, N1x, N1y)] * F1[f_id(c2, c1, f1x, f1y, C2, C1, F1x, F1y)];
 //		}
-//		
+//
 //		t = ReLU(t);
 //		//O1[id(c2, n2x, n2y, C2, N2x, N2y)] = t;
 //
 //		// update values in buffer
-//		// for (int c3 = 0; c3 < C3; ++c3)
+//		for (int c3 = 0; c3 < C3; ++c3)
 //		for (int n3y = max(n3y_0, n2y - F2y + 1); n3y < n3y_bound && n3y <= n2y; ++n3y)
 //		for (int n3x = max(n3x_0, n2x - F2x + 1); n3x < n3x_bound && n3x <= n2x; ++n3x) {
 //			int f2y = n2y - n3y, f2x = n2x - n3x;
-//			buffer[n3y - n3y_0][n3x - n3x_0] += t * F2[f_id(c3, c2, f2x, f2y, C3, C2, F2x, F2y)];
+//			O2[id(c3, n3x, n3y, C3, N3x, N3y)] += t * F2[f_id(c3, c2, f2x, f2y, C3, C2, F2x, F2y)];
 //		}
 //	}
 //
 //	// write buffer
+//	for (int c3 = 0; c3 < C3; ++c3)
 //	for (int i = 0; i < n3y_bound - n3y_0; ++i)
 //	for (int j = 0; j < n3x_bound - n3x_0; ++j)
-//		O2[id(c3, n3x_0 + j, n3y_0 + i, C3, N3x, N3y)] = ReLU(buffer[i][j]);
+//		O2[id(c3, n3x_0 + j, n3y_0 + i, C3, N3x, N3y)] = ReLU(O2[id(c3, n3x_0 + j, n3y_0 + i, C3, N3x, N3y)]);
 //}
 
+extern __shared__ float buffer[];
+
+// right variant of fused layers
 __global__ void convolution_os_is(int N1y, int N1x, int C1,
 	                              int N2y, int N2x, int C2,
 	                              int N3y, int N3x, int C3,
 	                              int F1y, int F1x,
 	                              int F2y, int F2x,
+								  int Ty, int Tx,
 	                              const float *I,
 	                              const float *F1,
 	                              //   const float *B1,
@@ -186,49 +200,104 @@ __global__ void convolution_os_is(int N1y, int N1x, int C1,
 	                              const float *F2,
 	                              // const float *B2,
 	                              float *O2) {
+	const int ty_0 = blockIdx.x * Ty;
+	const int tx_0 = blockIdx.y * Tx;
+	const int c0 = threadIdx.x;
 
-	const int ty_0 = blockIdx.x * BSIZE; // < N3 / BSIZE
-	const int tx_0 = blockIdx.y * BSIZE; // < N3 / BSIZE
-	const int c3 = blockIdx.z;
+	const int ty_bound = min(N3y - ty_0, Ty);
+	const int tx_bound = min(N3x - tx_0, Tx);
 
-	const int ty_bound = min(N3y, (ty_0 + 1)*BSIZE);
-	const int tx_bound = min(N3x, (tx_0 + 1)*BSIZE);
-
-	const int by = threadIdx.x; // < BSIZE
-	const int bx = threadIdx.y; // < BSIZE
 	float t;
 
-	__shared__ float buffer[BSIZE][BSIZE];
+	if (c0 < C2) {
+		for (int by = 0; by < ty_bound + F2y - 1; ++by)
+		for (int bx = 0; bx < tx_bound + F2x - 1; ++bx) {
+			float t = 0;
 
-	buffer[by][bx] = 0;
-
-	__syncthreads();
-
-	for (int n2y = ty_0 + by; n2y < ty_bound + F2y - 1; n2y += BSIZE)
-	for (int n2x = tx_0 + bx; n2x < tx_bound + F2x - 1; n2x += BSIZE) {
-		for (int c2 = 0; c2 < C2; ++c2) {
-			t = 0;
-
+			// calculate value for intermediate layer
 			for (int c1 = 0; c1 < C1; c1++)
 			for (int f1y = 0; f1y < F1y; f1y++)
 			for (int f1x = 0; f1x < F1x; f1x++) {
-				t += I[id(c1, n2x + f1x, n2y + f1y, C1, N1x, N1y)] * F1[f_id(c2, c1, f1x, f1y, C2, C1, F1x, F1y)];
+				t += I[id(c1, tx_0 + bx + f1x, ty_0 + by + f1y, C1, N1x, N1y)] * F1[f_id(c0, c1, f1x, f1y, C2, C1, F1x, F1y)];
 			}
 
-			t = ReLU(t);
-
-			/*for (int n3y = max(ty_0, n2y - F2y + 1); n3y < ty_bound && n3y <= n2y; ++n3y)
-			for (int n3x = max(tx_0, n2x - F2x + 1); n3x < tx_bound && n3x <= n2x; ++n3x) {
-				atomicAdd(&buffer[n3y - ty_0][n3x - tx_0], t * F2[f_id(c3, c2, n2x - n3x, n2y - n3y, C3, C2, F2x, F2y)]);
-			}*/
+			buffer[id(c0, bx, by, C2, Tx + F2x - 1, Ty + F2y - 1)] = ReLU(t);
 		}
 	}
 
 	__syncthreads();
 
-	if (ty_0 + by < N3y && tx_0 + bx < N3x)
-		O2[id(c3, tx_0 + bx, ty_0 + by, C3, N3x, N3y)] = ReLU(buffer[by][bx]);
+	if (c0 < C3) {
+		for (int by = 0; by < ty_bound; by += 1)
+		for (int bx = 0; bx < tx_bound; bx += 1) {
+			float t = 0;
+
+			for (int c2 = 0; c2 < C2; c2++)
+			for (int f2y = 0; f2y < F2y; f2y++)
+			for (int f2x = 0; f2x < F2x; f2x++) {
+				t += buffer[id(c2, bx + f2x, by + f2y, C2, Tx + F2x - 1, Ty + F2y - 1)] * F2[f_id(c0, c2, f2x, f2y, C3, C2, F2x, F2y)];
+			}
+
+			O2[id(c0, tx_0 + bx, ty_0 + by, C3, N3x, N3y)] = ReLU(t);
+		}
+	}
 }
+
+//__global__ void convolution_os_is(int N1y, int N1x, int C1,
+//	                              int N2y, int N2x, int C2,
+//	                              int N3y, int N3x, int C3,
+//	                              int F1y, int F1x,
+//	                              int F2y, int F2x,
+//	                              const float *I,
+//	                              const float *F1,
+//	                              //   const float *B1,
+//	                              float *O1,
+//	                              const float *F2,
+//	                              // const float *B2,
+//	                              float *O2) {
+//
+//	const int ty_0 = blockIdx.x * BSIZE; // < N3 / BSIZE
+//	const int tx_0 = blockIdx.y * BSIZE; // < N3 / BSIZE
+//	const int c3 = blockIdx.z;
+//
+//	const int ty_bound = min(N3y, (ty_0 + 1)*BSIZE);
+//	const int tx_bound = min(N3x, (tx_0 + 1)*BSIZE);
+//
+//	const int by = threadIdx.x; // < BSIZE
+//	const int bx = threadIdx.y; // < BSIZE
+//	float t;
+//
+//	__shared__ float buffer[BSIZE][BSIZE];
+//
+//	buffer[by][bx] = 0;
+//
+//	__syncthreads();
+//
+//	for (int n2y = ty_0 + by; n2y < ty_bound + F2y - 1; n2y += BSIZE)
+//	for (int n2x = tx_0 + bx; n2x < tx_bound + F2x - 1; n2x += BSIZE) {
+//		for (int c2 = 0; c2 < C2; ++c2) {
+//			t = 0;
+//
+//			for (int c1 = 0; c1 < C1; c1++)
+//			for (int f1y = 0; f1y < F1y; f1y++)
+//			for (int f1x = 0; f1x < F1x; f1x++) {
+//				t += I[id(c1, n2x + f1x, n2y + f1y, C1, N1x, N1y)] * F1[f_id(c2, c1, f1x, f1y, C2, C1, F1x, F1y)];
+//			}
+//
+//			t = ReLU(t);
+//
+//			/*for (int n3y = max(ty_0, n2y - F2y + 1); n3y < ty_bound && n3y <= n2y; ++n3y)
+//			for (int n3x = max(tx_0, n2x - F2x + 1); n3x < tx_bound && n3x <= n2x; ++n3x) {
+//				atomicAdd(&buffer[n3y - ty_0][n3x - tx_0], t * F2[f_id(c3, c2, n2x - n3x, n2y - n3y, C3, C2, F2x, F2y)]);
+//			}*/
+//		}
+//	}
+//
+//	__syncthreads();
+//
+//	if (ty_0 + by < N3y && tx_0 + bx < N3x)
+//		O2[id(c3, tx_0 + bx, ty_0 + by, C3, N3x, N3y)] = ReLU(buffer[by][bx]);
+//}
 
 bool float_compare(float lhs,
 	               float rhs,
@@ -289,6 +358,8 @@ bool check_error_status(cudaError_t status, const char *error_message) {
 
 	return false;
 }
+
+const int T = 4;
 
 // Helper function for using CUDA to add vectors in parallel.
 cudaError_t make_two_concolution(float *A,
@@ -359,11 +430,12 @@ cudaError_t make_two_concolution(float *A,
 	// Run first convolution processing
 
 	dim3 dimBlock1(c2, 1);
-	dim3 dimGrid1((n2 + BSIZE - 1) / BSIZE, (n2 + BSIZE - 1) / BSIZE);
+	dim3 dimGrid1(n2, (n2 + T - 1) / T);
 	// Launch a kernel on the GPU with one thread for each element.
 	convolution_simple<<<dimGrid1, dimBlock1>>>(n1, n1, c1, 
 		                                        n2, n2, c2, 
 		                                        f1, f1, 
+		                                        1, T,  
 		                                        dev_A, dev_F1, dev_C);
 
 	//// Check for any errors launching the kernel
@@ -384,11 +456,12 @@ cudaError_t make_two_concolution(float *A,
 	// Run second convolution processing
 
 	dim3 dimBlock2(c3, 1);
-	dim3 dimGrid2((n3 + BSIZE - 1) / BSIZE, (n3 + BSIZE - 1) / BSIZE);
+	dim3 dimGrid2(n3, (n3 + T - 1) / T);
 	// Launch a kernel on the GPU with one thread for each element.
 	convolution_simple<<<dimGrid2, dimBlock2>>>(n2, n2, c2,
 		                                        n3, n3, c3,
 		                                        f2, f2,
+		                                        1, T, 
 		                                        dev_C, dev_F2, dev_E);
 
 	//// Check for any errors launching the kernel
@@ -503,24 +576,27 @@ cudaError_t make_two_concolution_os_is(float *A,
 		goto Error;
 
 	// Run first convolution processing
+	//int T = (int) sqrt(1024 / std::max(c2, c3));
+	//int T = 3;
 
-	dim3 dimBlock1(std::max(c3, c3), 1);
-	dim3 dimGrid1((n2 + BSIZE - 1) / BSIZE, (n2 + BSIZE - 1) / BSIZE);
+	dim3 dimBlock1(std::max(c2, c3), 1);
+	dim3 dimGrid1((n3 + 0) / 1, (n3 + T - 1) / T);
 	//// Launch a kernel on the GPU with one thread for each element.
-	//convolution_os_is<<<dimGrid1, dimBlock1>>>(n1, n1, c1,
-	//	                                       n2, n2, c2,
-	//	                                       n3, n3, c3,
-	//	                                       f1, f1,
-	//	                                       f2, f2,
-	//	                                       dev_A, dev_F1, dev_C, dev_F2, dev_E);
+	convolution_os_is<<<dimGrid1, dimBlock1, c2 * (1 + f2 - 1) * (T+f2 - 1) * sizeof(float)>>>(n1, n1, c1,
+		                                                                             n2, n2, c2,
+		                                                                             n3, n3, c3,
+		                                                                             f1, f1,
+		                                                                             f2, f2,
+																					 1, T,
+		                                                                             dev_A, dev_F1, dev_C, dev_F2, dev_E);
 
-
+/*
 	convolution_fusion<<<dimGrid1, dimBlock1>>>(n1, n1, c1,
 		                                        n2, n2, c2,
 		                                        n3, n3, c3,
 		                                        f1, f1,
 		                                        f2, f2,
-		                                        dev_A, dev_F1, dev_C, dev_F2, dev_E);
+		                                        dev_A, dev_F1, dev_C, dev_F2, dev_E);*/
 
 	// Check for any errors launching the kernel
 	cudaStatus = cudaGetLastError();
@@ -569,10 +645,10 @@ Error:
 
 
 bool test_convolutions() {
-	int C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
+	int C1 = 32, C2 = 32, C3 = 32, F1 = 3, F2 = 3;
 	// int C1 = 1, C2 = 1, C3 = 1, F1 = 3, F2 = 3;
 	// int N1 = rand() % 100 + F1 + F2 + 400;
-	int N1 = 100 + F1 + F2;
+	int N1 = 160 + F1 + F2;
 	// int N1 = rand() % 350 + F1 + F2;
 	// int N1 = rand() % 200 + 3, C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
 	std::cout << "Start" << std::endl;
@@ -583,7 +659,7 @@ bool test_convolutions() {
 	std::cout << N1 << " " << N2 << " " << N3 << std::endl;
 
 	std::vector<float> A(C1*N1*N1);
-	std::vector<float> B(C2*C1*F1*F1);
+	std::vector<float> B(C2*C2*F1*F1, 0.0f);
 	std::vector<float> C_1(C2*N2*N2);
 	std::vector<float> C_2(C2*N2*N2);
 	std::vector<float> D(C3*C2*F2*F2);
@@ -596,11 +672,10 @@ bool test_convolutions() {
 		A[id(c, x, y, C1, N1, N1)] = rand() % 3 + 1.0 / (1.0 + rand() % 3);
 	}
 
-	for (int c1 = 0; c1 < C1; c1++)
 	for (int c2 = 0; c2 < C2; c2++)
 	for (int x = 0; x < F1; x++)
 	for (int y = 0; y < F1; y++) {
-		B[f_id(c2, c1, x, y, C2, C1, F1, F1)] = rand() % 3 + 1.0 / (1.0 + rand() % 3);
+		B[f_id(c2, c2, x, y, C2, C2, F1, F1)] = rand() % 3 + 1.0 / (1.0 + rand() % 3);
 	}
 
 	for (int c3 = 0; c3 < C3; c3++)
@@ -612,7 +687,7 @@ bool test_convolutions() {
 
 	cudaError cudaStatus;
 
-	std::cout << "Simple convolution" << std::endl;
+	std::cout << "Simple convolution " << std::endl;
 
 	cudaStatus = make_two_concolution(A.data(), B.data(), C_1.data(),
 		                              D.data(), E_1.data(),
@@ -621,7 +696,7 @@ bool test_convolutions() {
 	if (check_error_status(cudaStatus, "Simple convolution failed!\n"))
 		return false;
 
-	std::cout << "OS-IS convolution" << std::endl;
+	std::cout << "OS-IS convolution " << std::endl;
 
 	cudaStatus = make_two_concolution_os_is(A.data(), B.data(), C_2.data(),
 				                            D.data(), E_2.data(),
