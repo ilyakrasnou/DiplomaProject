@@ -1,4 +1,3 @@
-
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
@@ -9,724 +8,737 @@
 #include <cmath>
 #include <vector>
 
-#define BSIZE 16
 #define id(c, x, y, C, X, Y) ((x) + (X) * ((y) + (Y) * (c)))
 #define f_id(a, c, x, y, A, C, X, Y) ((x) + (X) * ((y) + (Y) * ((c) + (C) * (a))))
 #define ReLU(v) (max((v), 0.0f))
 
+const int T = 1;
 
-cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
+__global__ void convolution(int N1y, int N1x, int C1,
+                            int N2y, int N2x, int C2,
+                            int Fy, int Fx,
+                            int Ty, int Tx,
+                            const float *I,
+                            const float *F,
+                            // const float *B,
+                            float *O) {
+    const int ty = blockIdx.x; // < N2y / Ty
+    const int tx = blockIdx.y; // < N2x / Tx
+    const int c2 = threadIdx.x;
 
-__global__ void addKernel(int *c, const int *a, const int *b)
-{
-    int i = threadIdx.x;
-    c[i] = a[i] + b[i];
+    const int n2y_bound = min(N2y, (ty + 1)*Ty);
+    const int n2x_bound = min(N2x, (tx + 1)*Tx);
+
+    const int n2y_0 = ty * Ty;
+    const int n2x_0 = tx * Tx;
+
+    float t;
+
+    //for (int c2 = 0; c2 < C2; ++c2)
+    for (int n2y = n2y_0; n2y < n2y_bound; ++n2y)
+    for (int n2x = n2x_0; n2x < n2x_bound; ++n2x) {
+        t = 0;
+
+        for (int c1 = 0; c1 < C1; ++c1)
+        for (int fx = 0; fx < Fx; ++fx) {
+        for (int fy = 0; fy < Fy; ++fy)
+            t += I[id(c1, n2x + fx, n2y + fy, C1, N1x, N1y)] * F[f_id(c2, c1, fx, fy, C2, C1, Fx, Fy)];
+        }
+
+        O[id(c2, n2x, n2y, C2, N2x, N2y)] = ReLU(t);
+    }
 }
 
-__global__ void convolution_simple(int N1y, int N1x, int C1,
-	                               int N2y, int N2x, int C2,
-	                               int Fy, int Fx,
-	                               int Ty, int Tx,
-	                               const float *I,
-	                               const float *F,
-	                               // const float *B,
-	                               float *O) {
-	const int ty = blockIdx.x; // < N2y / Ty
-	const int tx = blockIdx.y; // < N2x / Tx
-	const int c2 = threadIdx.x;
+__global__ void convolution_separable(int N1y, int N1x, int C1,
+                                      int N2y, int N2x, int C2,
+                                      int Fy, int Fx,
+                                      int Ty, int Tx,
+                                      const float *I,
+                                      const float *F,
+                                      // const float *B,
+                                      float *O) {
+    const int ty = blockIdx.x; // < N2y / Ty
+    const int tx = blockIdx.y; // < N2x / Tx
+    const int c2 = threadIdx.x;
 
-	const int n2y_bound = min(N2y, (ty + 1)*Ty);
-	const int n2x_bound = min(N2x, (tx + 1)*Tx);
+    const int n2y_bound = min(N2y, (ty + 1)*Ty);
+    const int n2x_bound = min(N2x, (tx + 1)*Tx);
 
-	const int n2y_0 = ty * Ty;
-	const int n2x_0 = tx * Tx;
+    const int n2y_0 = ty * Ty;
+    const int n2x_0 = tx * Tx;
 
-	float t;
+    for (int n2y = n2y_0; n2y < n2y_bound; ++n2y)
+    for (int n2x = n2x_0; n2x < n2x_bound; ++n2x) {
+        float t = 0;
 
-	//for (int c2 = 0; c2 < C2; ++c2)
-	for (int n2y = n2y_0; n2y < n2y_bound; ++n2y)
-	for (int n2x = n2x_0; n2x < n2x_bound; ++n2x) {
-		t = 0;
+        for (int fy = 0; fy < Fy; ++fy)
+        for (int fx = 0; fx < Fx; ++fx) {
+            t += I[id(c2, n2x + fx, n2y + fy, C1, N1x, N1y)] * F[f_id(c2, c2, fx, fy, C2, C1, Fx, Fy)];
+        }
 
-		for (int c1 = 0; c1 < C1; ++c1)
-		for (int fy = 0; fy < Fy; ++fy)
-		for (int fx = 0; fx < Fx; ++fx) {
-			t += I[id(c1, n2x + fx, n2y + fy, C1, N1x, N1y)] * F[f_id(c2, c1, fx, fy, C2, C1, Fx, Fy)];
-		}
-
-		O[id(c2, n2x, n2y, C2, N2x, N2y)] = ReLU(t);
-	}
+        O[id(c2, n2x, n2y, C2, N2x, N2y)] = ReLU(t);
+    }
 }
 
-__global__ void convolution_fusion(int N1y, int N1x, int C1,
-                                   int N2y, int N2x, int C2,
-                                   int N3y, int N3x, int C3,
-                                   int F1y, int F1x,
-                                   int F2y, int F2x,
-                                   const float *I,
-                                   const float *F1,
-                                   //   const float *B1,
-                                   float *O1,
-                                   const float *F2,
-                                   // const float *B2,
-                                   float *O2) {
-	const int ty_0 = blockIdx.x*BSIZE; // < N2y / BSIZE
-	const int tx_0 = blockIdx.y*BSIZE; // < N2x / BSIZE
-	const int c0 = threadIdx.x; // max(c2, c3)
+__global__ void convolution_one_to_one(int N1y, int N1x, int C1,
+                                       int N2y, int N2x, int C2,
+                                       int Fy, int Fx,
+                                       int Ty, int Tx,
+                                       const float *I,
+                                       const float *F,
+                                       // const float *B,
+                                       float *O) {
+    const int ty = blockIdx.x; // < N2y / Ty
+    const int tx = blockIdx.y; // < N2x / Tx
+    const int c2 = threadIdx.x;
 
-	const int ty_bound = (ty_0 + 1)*BSIZE;
-	const int tx_bound = (tx_0 + 1)*BSIZE;
+    const int n2y_bound = min(N2y, (ty + 1)*Ty);
+    const int n2x_bound = min(N2x, (tx + 1)*Tx);
 
-	float t;
+    const int n2y_0 = ty * Ty;
+    const int n2x_0 = tx * Tx;
 
-	if (c0 < C2) {
-	    for (int n2y = ty_0; n2y < ty_bound && n2y < N2y; ++n2y)
-	    for (int n2x = tx_0; n2x < tx_bound && n2x < N2x; ++n2x) {
-	    	t = 0;
-	    
-	    	for (int c1 = 0; c1 < C1; ++c1)
-	    	for (int f1y = 0; f1y < F1y; ++f1y)
-	    	for (int f1x = 0; f1x < F1x; ++f1x) {
-	    		t += I[id(c1, n2x + f1x, n2y + f1y, C1, N1x, N1y)] * F1[f_id(c0, c1, f1x, f1y, C2, C1, F1x, F1y)];
-	    	}
-	    
-	    	O1[id(c0, n2x, n2y, C2, N2x, N2y)] = ReLU(t);
-	    }
-	}
+    float t;
 
-	__syncthreads();
+    for (int n2y = n2y_0; n2y < n2y_bound; ++n2y)
+    for (int n2x = n2x_0; n2x < n2x_bound; ++n2x) {
+        t = 0;
 
-	if (c0 < C3) {
-	    for (int n3y = ty_0; n3y < ty_bound && n3y < N3y; ++n3y)
-	    for (int n3x = tx_0; n3x < tx_bound && n3x < N3x; ++n3x) {
-	    	t = 0;
-	    
-	    	for (int c2 = 0; c2 < C2; ++c2)
-	    	for (int f2y = 0; f2y < F2y; ++f2y)
-	    	for (int f2x = 0; f2x < F2x; ++f2x) {
-	    		t += O1[id(c2, n3x + f2x, n3y + f2y, C2, N2x, N2y)] * F2[f_id(c0, c2, f2x, f2y, C3, C2, F2x, F2y)];
-	    	}
-	    
-	    	O2[id(c0, n3x, n3y, C3, N3x, N3y)] = ReLU(t);
-	    }
-	}
+        for (int c1 = 0; c1 < C1; ++c1) {
+            t += I[id(c1, n2x, n2y, C1, N1x, N1y)] * F[f_id(c2, c1, 0, 0, C2, C1, Fx, Fy)];
+        }
+
+        O[id(c2, n2x, n2y, C2, N2x, N2y)] = ReLU(t);
+    }
 }
-
-//__global__ void convolution_os_is(int N1y, int N1x, int C1,
-//	                              int N2y, int N2x, int C2,
-//	                              int N3y, int N3x, int C3,
-//	                              int F1y, int F1x,
-//	                              int F2y, int F2x,
-//	                              const float *I,
-//	                              const float *F1,
-//	                              //   const float *B1,
-//	                              float *O1,
-//	                              const float *F2,
-//	                              // const float *B2,
-//	                              float *O2) {
-//	const int ty = blockIdx.x; // < N3y / 32 
-//	const int tx = blockIdx.y; // < N3x / 32
-//	//const int c3 = threadIdx.x;
-//
-//	const int n3y_bound = min(N3y, (ty + 1)*BSIZE);
-//	const int n3x_bound = min(N3x, (tx + 1)*BSIZE);
-//
-//	const int n3y_0 = ty * BSIZE;
-//	const int n3x_0 = tx * BSIZE;
-//
-//	if (n3y_0 >= N3y || n3x_0 >= N3x)
-//		return;
-//
-//	//float buffer[BSIZE][BSIZE];
-//	float t;
-//
-//	// clear buffer
-//	/*for (int i = 0; i < n3y_bound - n3y_0; ++i)
-//		for (int j = 0; j < n3x_bound - n3x_0; ++j)
-//			buffer[i][j] = 0;*/
-//
-//	for (int c3 = 0; c3 < C3; ++c3)
-//	for (int i = 0; i < n3y_bound - n3y_0; ++i)
-//	for (int j = 0; j < n3x_bound - n3x_0; ++j)
-//		O2[id(c3, n3x_0 + j, n3y_0 + i, C3, N3x, N3y)] = 0;
-//
-//	// calculate buffer
-//	for (int c2 = 0; c2 < C2; c2++)
-//	for (int n2y = n3y_0; n2y < n3y_bound + F2y; n2y++)
-//	for (int n2x = n3x_0; n2x < n3x_bound + F2x; n2x++) {
-//		// O[id(c2, n2x, n2y, C2, N2x, N2y)] = B[c2];
-//		// O[id(c2, n2x, n2y, C2, N2x, N2y)] = 0;
-//		t = 0;
-//
-//		// calculate value for intermediate layer
-//		for (int c1 = 0; c1 < C1; c1++)
-//		for (int f1y = 0; f1y < F1y; f1y++)
-//		for (int f1x = 0; f1x < F1x; f1x++) {
-//			t += I[id(c1, n2x + f1x, n2y + f1y, C1, N1x, N1y)] * F1[f_id(c2, c1, f1x, f1y, C2, C1, F1x, F1y)];
-//		}
-//
-//		t = ReLU(t);
-//		//O1[id(c2, n2x, n2y, C2, N2x, N2y)] = t;
-//
-//		// update values in buffer
-//		for (int c3 = 0; c3 < C3; ++c3)
-//		for (int n3y = max(n3y_0, n2y - F2y + 1); n3y < n3y_bound && n3y <= n2y; ++n3y)
-//		for (int n3x = max(n3x_0, n2x - F2x + 1); n3x < n3x_bound && n3x <= n2x; ++n3x) {
-//			int f2y = n2y - n3y, f2x = n2x - n3x;
-//			O2[id(c3, n3x, n3y, C3, N3x, N3y)] += t * F2[f_id(c3, c2, f2x, f2y, C3, C2, F2x, F2y)];
-//		}
-//	}
-//
-//	// write buffer
-//	for (int c3 = 0; c3 < C3; ++c3)
-//	for (int i = 0; i < n3y_bound - n3y_0; ++i)
-//	for (int j = 0; j < n3x_bound - n3x_0; ++j)
-//		O2[id(c3, n3x_0 + j, n3y_0 + i, C3, N3x, N3y)] = ReLU(O2[id(c3, n3x_0 + j, n3y_0 + i, C3, N3x, N3y)]);
-//}
 
 extern __shared__ float buffer[];
 
-// right variant of fused layers
-__global__ void convolution_os_is(int N1y, int N1x, int C1,
-	                              int N2y, int N2x, int C2,
-	                              int N3y, int N3x, int C3,
-	                              int F1y, int F1x,
-	                              int F2y, int F2x,
-								  int Ty, int Tx,
-	                              const float *I,
-	                              const float *F1,
-	                              //   const float *B1,
-	                              float *O1,
-	                              const float *F2,
-	                              // const float *B2,
-	                              float *O2) {
-	const int ty_0 = blockIdx.x * Ty;
-	const int tx_0 = blockIdx.y * Tx;
-	const int c0 = threadIdx.x;
+__global__ void convolution_dep_sep_fused(int N1y, int N1x, int C1,
+                                          int N2y, int N2x, int C2,
+                                          int N3y, int N3x, int C3,
+                                          int F1y, int F1x,
+                                          int F2y, int F2x,
+                                          int Ty, int Tx,
+                                          const float *I,
+                                          const float *F1,
+                                          //   const float *B1,
+                                          float *O1,
+                                          const float *F2,
+                                          // const float *B2,
+                                          float *O2) {
+    const int ty_0 = blockIdx.x * Ty;
+    const int tx_0 = blockIdx.y * Tx;
+    const int c0 = threadIdx.x;
 
-	const int ty_bound = min(N3y - ty_0, Ty);
-	const int tx_bound = min(N3x - tx_0, Tx);
+    const int ty_bound = min(N3y - ty_0, Ty);
+    const int tx_bound = min(N3x - tx_0, Tx);
 
-	float t;
+    float t;
 
-	if (c0 < C2) {
-		for (int by = 0; by < ty_bound + F2y - 1; ++by)
-		for (int bx = 0; bx < tx_bound + F2x - 1; ++bx) {
-			float t = 0;
+    if (c0 < C2) {
+        for (int by = 0; by < ty_bound + F2y - 1; ++by)
+        for (int bx = 0; bx < tx_bound + F2x - 1; ++bx) {
+            float t = 0;
 
-			// calculate value for intermediate layer
-			for (int c1 = 0; c1 < C1; c1++)
-			for (int f1y = 0; f1y < F1y; f1y++)
-			for (int f1x = 0; f1x < F1x; f1x++) {
-				t += I[id(c1, tx_0 + bx + f1x, ty_0 + by + f1y, C1, N1x, N1y)] * F1[f_id(c0, c1, f1x, f1y, C2, C1, F1x, F1y)];
-			}
+            // calculate value for intermediate layer
+            for (int f1y = 0; f1y < F1y; f1y++)
+            for (int f1x = 0; f1x < F1x; f1x++) {
+                t += I[id(c0, tx_0 + bx + f1x, ty_0 + by + f1y, C1, N1x, N1y)] * F1[f_id(c0, c0, f1x, f1y, C2, C1, F1x, F1y)];
+            }
 
-			buffer[id(c0, bx, by, C2, Tx + F2x - 1, Ty + F2y - 1)] = ReLU(t);
-		}
-	}
+            buffer[id(c0, bx, by, C2, Tx + F2x - 1, Ty + F2y - 1)] = ReLU(t);
+        }
+    }
 
-	__syncthreads();
+    __syncthreads();
 
-	if (c0 < C3) {
-		for (int by = 0; by < ty_bound; by += 1)
-		for (int bx = 0; bx < tx_bound; bx += 1) {
-			float t = 0;
+    if (c0 < C3) {
+        for (int by = 0; by < ty_bound; by += 1)
+        for (int bx = 0; bx < tx_bound; bx += 1) {
+            float t = 0;
 
-			for (int c2 = 0; c2 < C2; c2++)
-			for (int f2y = 0; f2y < F2y; f2y++)
-			for (int f2x = 0; f2x < F2x; f2x++) {
-				t += buffer[id(c2, bx + f2x, by + f2y, C2, Tx + F2x - 1, Ty + F2y - 1)] * F2[f_id(c0, c2, f2x, f2y, C3, C2, F2x, F2y)];
-			}
+            for (int c2 = 0; c2 < C2; c2++) {
+                t += buffer[id(c2, bx, by, C2, Tx + F2x - 1, Ty + F2y - 1)] * F2[f_id(c0, c2, 0, 0, C3, C2, F2x, F2y)];
+            }
 
-			O2[id(c0, tx_0 + bx, ty_0 + by, C3, N3x, N3y)] = ReLU(t);
-		}
-	}
+            O2[id(c0, tx_0 + bx, ty_0 + by, C3, N3x, N3y)] = ReLU(t);
+        }
+    }
 }
 
-//__global__ void convolution_os_is(int N1y, int N1x, int C1,
-//	                              int N2y, int N2x, int C2,
-//	                              int N3y, int N3x, int C3,
-//	                              int F1y, int F1x,
-//	                              int F2y, int F2x,
-//	                              const float *I,
-//	                              const float *F1,
-//	                              //   const float *B1,
-//	                              float *O1,
-//	                              const float *F2,
-//	                              // const float *B2,
-//	                              float *O2) {
-//
-//	const int ty_0 = blockIdx.x * BSIZE; // < N3 / BSIZE
-//	const int tx_0 = blockIdx.y * BSIZE; // < N3 / BSIZE
-//	const int c3 = blockIdx.z;
-//
-//	const int ty_bound = min(N3y, (ty_0 + 1)*BSIZE);
-//	const int tx_bound = min(N3x, (tx_0 + 1)*BSIZE);
-//
-//	const int by = threadIdx.x; // < BSIZE
-//	const int bx = threadIdx.y; // < BSIZE
-//	float t;
-//
-//	__shared__ float buffer[BSIZE][BSIZE];
-//
-//	buffer[by][bx] = 0;
-//
-//	__syncthreads();
-//
-//	for (int n2y = ty_0 + by; n2y < ty_bound + F2y - 1; n2y += BSIZE)
-//	for (int n2x = tx_0 + bx; n2x < tx_bound + F2x - 1; n2x += BSIZE) {
-//		for (int c2 = 0; c2 < C2; ++c2) {
-//			t = 0;
-//
-//			for (int c1 = 0; c1 < C1; c1++)
-//			for (int f1y = 0; f1y < F1y; f1y++)
-//			for (int f1x = 0; f1x < F1x; f1x++) {
-//				t += I[id(c1, n2x + f1x, n2y + f1y, C1, N1x, N1y)] * F1[f_id(c2, c1, f1x, f1y, C2, C1, F1x, F1y)];
-//			}
-//
-//			t = ReLU(t);
-//
-//			/*for (int n3y = max(ty_0, n2y - F2y + 1); n3y < ty_bound && n3y <= n2y; ++n3y)
-//			for (int n3x = max(tx_0, n2x - F2x + 1); n3x < tx_bound && n3x <= n2x; ++n3x) {
-//				atomicAdd(&buffer[n3y - ty_0][n3x - tx_0], t * F2[f_id(c3, c2, n2x - n3x, n2y - n3y, C3, C2, F2x, F2y)]);
-//			}*/
-//		}
-//	}
-//
-//	__syncthreads();
-//
-//	if (ty_0 + by < N3y && tx_0 + bx < N3x)
-//		O2[id(c3, tx_0 + bx, ty_0 + by, C3, N3x, N3y)] = ReLU(buffer[by][bx]);
-//}
-
 bool float_compare(float lhs,
-	               float rhs,
-	               float eps) {
-	return fabs(lhs - rhs) <= eps;
+                   float rhs,
+                   float eps) {
+    return fabs(lhs - rhs) <= eps;
 }
 
 bool compare_results(const std::vector<float>& A,
-	                 const std::vector<float>& B,
-	                 float eps = 1e-7) {
-	if (A.size() != B.size())
-		return false;
+                     const std::vector<float>& B,
+                     float eps = 1e-7) {
+    if (A.size() != B.size())
+        return false;
 
-	for (int i = 0; i < A.size(); i++) {
-		if (!float_compare(A[i], B[i], eps)) {
-			std::cout << i << " " << A[i] << " " << B[i] << std::endl;
-			return false;
-		}
-	}
-	return true;
+    for (int i = 0; i < A.size(); i++) {
+        if (!float_compare(A[i], B[i], eps)) {
+            std::cout << i << " " << A[i] << " " << B[i] << std::endl;
+            return false;
+        }
+    }
+    return true;
 }
 
 bool compare_convolution(int Ox, int Oy,
-	                     int Fx, int Fy,
-	                     int C1, int C2,
-	                     const std::vector<float>& I,
-	                     const std::vector<float>& F,
-	                     const std::vector<float>& O,
-	                     float eps = 1e-3) {
-	for (int c2 = 0; c2 < C2; ++c2)
-	for (int oy = 0; oy < Oy; ++oy)
-	for (int ox = 0; ox < Ox; ++ox) {
-		float val = 0.0f;
+                         int Fx, int Fy,
+                         int C1, int C2,
+                         const std::vector<float>& I,
+                         const std::vector<float>& F,
+                         const std::vector<float>& O,
+                         float eps = 1e-3) {
+    for (int c2 = 0; c2 < C2; ++c2)
+    for (int oy = 0; oy < Oy; ++oy)
+    for (int ox = 0; ox < Ox; ++ox) {
+        float val = 0.0f;
 
-		for (int c1 = 0; c1 < C1; ++c1)
-		for (int fy = 0; fy < Fy; ++fy)
-		for (int fx = 0; fx < Fx; ++fx) {
-			val += I[id(c1, ox + fx, oy + fy, C1, Ox + Fx - 1, Oy + Fy - 1)] * F[f_id(c2, c1, fx, fy, C2, C1, Fx, Fy)];
-		}
+        for (int c1 = 0; c1 < C1; ++c1)
+        for (int fy = 0; fy < Fy; ++fy)
+        for (int fx = 0; fx < Fx; ++fx) {
+            val += I[id(c1, ox + fx, oy + fy, C1, Ox + Fx - 1, Oy + Fy - 1)] * F[f_id(c2, c1, fx, fy, C2, C1, Fx, Fy)];
+        }
 
-		val = ReLU(val);
+        val = ReLU(val);
 
-		// std::cout << c2 << " " << ox << " " << oy << " " << O[id(c2, ox, oy, C2, Ox, Oy)] << " " << val << std::endl; 
-		if (!float_compare(O[id(c2, ox, oy, C2, Ox, Oy)], val, eps)) {
-			std::cout << c2 << " " << ox << " " << oy << " " << O[id(c2, ox, oy, C2, Ox, Oy)] << " " << val << std::endl;
-			return false;
-		}
-	}
+        // std::cout << c2 << " " << ox << " " << oy << " " << O[id(c2, ox, oy, C2, Ox, Oy)] << " " << val << std::endl; 
+        if (!float_compare(O[id(c2, ox, oy, C2, Ox, Oy)], val, eps)) {
+            std::cout << c2 << " " << ox << " " << oy << " " << O[id(c2, ox, oy, C2, Ox, Oy)] << " " << val << std::endl;
+            return false;
+        }
+    }
 
-	return true;
+    return true;
 }
 
 bool check_error_status(cudaError_t status, const char *error_message) {
-	if (status != cudaSuccess) {
-		fprintf(stderr, error_message);
-		return true;
-	}
+    if (status != cudaSuccess) {
+        fprintf(stderr, error_message);
+        return true;
+    }
 
-	return false;
+    return false;
 }
 
-const int T = 4;
-
-// Helper function for using CUDA to add vectors in parallel.
-cudaError_t make_two_concolution(float *A,
-	                             float *Filter1,
-	                             float *C,
-	                             float *Filter2,
-	                             float *E,
-	                             int n1, int c1,
-	                             int n2, int c2,
-	                             int n3, int c3,
-	                             int f1, int f2)
+cudaError_t make_two_convolution(float *A,
+                                 float *Filter1,
+                                 float *C,
+                                 float *Filter2,
+                                 float *E,
+                                 int n1, int c1,
+                                 int n2, int c2,
+                                 int n3, int c3,
+                                 int f1, int f2)
 {
-	float *dev_A = 0;
-	float *dev_F1 = 0;
-	float *dev_C = 0;
-	float *dev_F2 = 0;
-	float *dev_E = 0;
-	cudaError_t cudaStatus;
+    float *dev_A = 0;
+    float *dev_F1 = 0;
+    float *dev_C = 0;
+    float *dev_F2 = 0;
+    float *dev_E = 0;
+    cudaError_t cudaStatus;
 
-	// Time measurement
-	cudaEvent_t startGPU, stopGPU;
-	cudaEventCreate(&startGPU);
-	cudaEventCreate(&stopGPU);
-	cudaEventRecord(startGPU, 0);
-
-
-	// Choose which GPU to run on, change this on a multi-GPU system.
-	cudaStatus = cudaSetDevice(0);
-	if (check_error_status(cudaStatus, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?\n"))
-		goto Error;
+    // Time measurement
+    cudaEvent_t startGPU, stopGPU;
+    cudaEventCreate(&startGPU);
+    cudaEventCreate(&stopGPU);
+    cudaEventRecord(startGPU, 0);
 
 
-	// Allocate buffers on GPU
-	cudaStatus = cudaMalloc((void**)&dev_A,  c1*n1*n1 * sizeof(float));
-	if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
-		goto Error;
-
-	cudaStatus = cudaMalloc((void**)&dev_F1, c2*c1*f1*f1 * sizeof(float));
-	if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
-		goto Error;
-
-	cudaStatus = cudaMalloc((void**)&dev_C,  c2*n2*n2 * sizeof(float));
-	if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
-		goto Error;
-
-	cudaStatus = cudaMalloc((void**)&dev_F2, c3*c2*f2*f2 * sizeof(float));
-	if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
-		goto Error;
-
-	cudaStatus = cudaMalloc((void**)&dev_E,  c3*n3*n3 * sizeof(float));
-	if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
-		goto Error;
+    // Choose which GPU to run on, change this on a multi-GPU system.
+    cudaStatus = cudaSetDevice(0);
+    if (check_error_status(cudaStatus, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?\n"))
+        goto Error;
 
 
-	// Copy input data from host memory to GPU buffers.
-	cudaStatus = cudaMemcpy(dev_A,  A,       c1*n1*n1 * sizeof(float),    cudaMemcpyHostToDevice);
-	if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
-		goto Error;
+    // Allocate buffers on GPU
+    cudaStatus = cudaMalloc((void**)&dev_A, c1*n1*n1 * sizeof(float));
+    if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
+        goto Error;
 
-	cudaStatus = cudaMemcpy(dev_F1, Filter1, c2*c1*f1*f1 * sizeof(float), cudaMemcpyHostToDevice);
-	if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
-		goto Error;
+    cudaStatus = cudaMalloc((void**)&dev_F1, c2*c1*f1*f1 * sizeof(float));
+    if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
+        goto Error;
 
-	cudaStatus = cudaMemcpy(dev_F2, Filter2, c3*c2*f2*f2 * sizeof(float), cudaMemcpyHostToDevice);
-	if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
-		goto Error;
+    cudaStatus = cudaMalloc((void**)&dev_C, c2*n2*n2 * sizeof(float));
+    if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
+        goto Error;
 
-	// Run first convolution processing
+    cudaStatus = cudaMalloc((void**)&dev_F2, c3*c2*f2*f2 * sizeof(float));
+    if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
+        goto Error;
 
-	dim3 dimBlock1(c2, 1);
-	dim3 dimGrid1(n2, (n2 + T - 1) / T);
-	// Launch a kernel on the GPU with one thread for each element.
-	convolution_simple<<<dimGrid1, dimBlock1>>>(n1, n1, c1, 
-		                                        n2, n2, c2, 
-		                                        f1, f1, 
-		                                        1, T,  
-		                                        dev_A, dev_F1, dev_C);
-
-	//// Check for any errors launching the kernel
-	//cudaStatus = cudaGetLastError();
-	//if (cudaStatus != cudaSuccess) {
-	//	fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-	//	goto Error;
-	//}
-
-	// cudaDeviceSynchronize waits for the kernel to finish, and returns
-	// any errors encountered during the launch.
-	cudaStatus = cudaDeviceSynchronize();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-		goto Error;
-	}
-
-	// Run second convolution processing
-
-	dim3 dimBlock2(c3, 1);
-	dim3 dimGrid2(n3, (n3 + T - 1) / T);
-	// Launch a kernel on the GPU with one thread for each element.
-	convolution_simple<<<dimGrid2, dimBlock2>>>(n2, n2, c2,
-		                                        n3, n3, c3,
-		                                        f2, f2,
-		                                        1, T, 
-		                                        dev_C, dev_F2, dev_E);
-
-	//// Check for any errors launching the kernel
-	//cudaStatus = cudaGetLastError();
-	//if (cudaStatus != cudaSuccess) {
-	//	fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-	//	goto Error;
-	//}
-
-	// cudaDeviceSynchronize waits for the kernel to finish, and returns
-	// any errors encountered during the launch.
-	cudaStatus = cudaDeviceSynchronize();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-		goto Error;
-	}
+    cudaStatus = cudaMalloc((void**)&dev_E, c3*n3*n3 * sizeof(float));
+    if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
+        goto Error;
 
 
-	// Copy output result from GPU
-	cudaStatus = cudaMemcpy(C, dev_C, c2*n2*n2 * sizeof(float), cudaMemcpyDeviceToHost);
-	if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
-		goto Error;
+    // Copy input data from host memory to GPU buffers.
+    cudaStatus = cudaMemcpy(dev_A, A, c1*n1*n1 * sizeof(float), cudaMemcpyHostToDevice);
+    if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
+        goto Error;
 
-	cudaStatus = cudaMemcpy(E, dev_E, c3*n3*n3 * sizeof(float), cudaMemcpyDeviceToHost);
-	if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
-		goto Error;
+    cudaStatus = cudaMemcpy(dev_F1, Filter1, c2*c1*f1*f1 * sizeof(float), cudaMemcpyHostToDevice);
+    if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
+        goto Error;
 
-	cudaEventRecord(stopGPU, 0);
-	cudaEventSynchronize(stopGPU);
-	float elapsedTimeGPU;
-	cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
-	fprintf(stdout, "Elapsed GPU time: %.3f\n", elapsedTimeGPU);
-	fflush(stdout);
+    cudaStatus = cudaMemcpy(dev_F2, Filter2, c3*c2*f2*f2 * sizeof(float), cudaMemcpyHostToDevice);
+    if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
+        goto Error;
+
+    // Run first convolution processing
+
+    dim3 dimBlock1(c2, 1);
+    dim3 dimGrid1((n2 + T - 1) / T, (n2 + T - 1) / T);
+    // Launch a kernel on the GPU with one thread for each element.
+    convolution<<<dimGrid1, dimBlock1>>>(n1, n1, c1,
+                                         n2, n2, c2,
+                                         f1, f1,
+                                         T, T,
+                                         dev_A, dev_F1, dev_C);
+
+    //// Check for any errors launching the kernel
+    //cudaStatus = cudaGetLastError();
+    //if (cudaStatus != cudaSuccess) {
+    //    fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+    //    goto Error;
+    //}
+
+    // cudaDeviceSynchronize waits for the kernel to finish, and returns
+    // any errors encountered during the launch.
+    cudaStatus = cudaDeviceSynchronize();
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+        goto Error;
+    }
+
+    // Run second convolution processing
+
+    dim3 dimBlock2(c3, 1);
+    dim3 dimGrid2((n3 + T - 1) / T, (n3 + T - 1) / T);
+    // Launch a kernel on the GPU with one thread for each element.
+    convolution<<<dimGrid2, dimBlock2>>>(n2, n2, c2,
+                                         n3, n3, c3,
+                                         f2, f2,
+                                         T, T,
+                                         dev_C, dev_F2, dev_E);
+
+    //// Check for any errors launching the kernel
+    //cudaStatus = cudaGetLastError();
+    //if (cudaStatus != cudaSuccess) {
+    //    fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+    //    goto Error;
+    //}
+
+    // cudaDeviceSynchronize waits for the kernel to finish, and returns
+    // any errors encountered during the launch.
+    cudaStatus = cudaDeviceSynchronize();
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+        goto Error;
+    }
+
+
+    // Copy output result from GPU
+    cudaStatus = cudaMemcpy(C, dev_C, c2*n2*n2 * sizeof(float), cudaMemcpyDeviceToHost);
+    if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
+        goto Error;
+
+    cudaStatus = cudaMemcpy(E, dev_E, c3*n3*n3 * sizeof(float), cudaMemcpyDeviceToHost);
+    if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
+        goto Error;
+
+    cudaEventRecord(stopGPU, 0);
+    cudaEventSynchronize(stopGPU);
+    float elapsedTimeGPU;
+    cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
+    fprintf(stdout, "Elapsed GPU time: %.3f\n", elapsedTimeGPU);
+    fflush(stdout);
 
 Error:
-	cudaFree(dev_E);
-	cudaFree(dev_F2);
-	cudaFree(dev_C);
-	cudaFree(dev_F1);
-	cudaFree(dev_A);
+    cudaFree(dev_E);
+    cudaFree(dev_F2);
+    cudaFree(dev_C);
+    cudaFree(dev_F1);
+    cudaFree(dev_A);
 
-	cudaEventDestroy(startGPU);
-	cudaEventDestroy(stopGPU);
+    cudaEventDestroy(startGPU);
+    cudaEventDestroy(stopGPU);
 
-	return cudaStatus;
+    return cudaStatus;
 }
 
-// Helper function for using CUDA to add vectors in parallel.
-cudaError_t make_two_concolution_os_is(float *A,
-	                                   float *Filter1,
-	                                   float *C,
-	                                   float *Filter2,
-	                                   float *E,
-	                                   int n1, int c1,
-	                                   int n2, int c2,
-	                                   int n3, int c3,
-	                                   int f1, int f2)
+
+cudaError_t make_two_layer_dep_sep(float *A,
+                                   float *Filter1,
+                                   float *C,
+                                   float *Filter2,
+                                   float *E,
+                                   int n1, int c1,
+                                   int n2, int c2,
+                                   int n3, int c3,
+                                   int f1, int f2)
 {
-	float *dev_A = 0;
-	float *dev_F1 = 0;
-	float *dev_C = 0;
-	float *dev_F2 = 0;
-	float *dev_E = 0;
-	cudaError_t cudaStatus;
+    float *dev_A = 0;
+    float *dev_F1 = 0;
+    float *dev_C = 0;
+    float *dev_F2 = 0;
+    float *dev_E = 0;
+    cudaError_t cudaStatus;
 
-	// Time measurement
-	cudaEvent_t startGPU, stopGPU;
-	cudaEventCreate(&startGPU);
-	cudaEventCreate(&stopGPU);
-	cudaEventRecord(startGPU, 0);
-
-
-	// Choose which GPU to run on, change this on a multi-GPU system.
-	cudaStatus = cudaSetDevice(0);
-	if (check_error_status(cudaStatus, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?\n"))
-		goto Error;
+    // Time measurement
+    cudaEvent_t startGPU, stopGPU;
+    cudaEventCreate(&startGPU);
+    cudaEventCreate(&stopGPU);
+    cudaEventRecord(startGPU, 0);
 
 
-	// Allocate buffers on GPU
-	cudaStatus = cudaMalloc((void**)&dev_A, c1*n1*n1 * sizeof(float));
-	if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
-		goto Error;
-
-	cudaStatus = cudaMalloc((void**)&dev_F1, c2*c1*f1*f1 * sizeof(float));
-	if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
-		goto Error;
-
-	cudaStatus = cudaMalloc((void**)&dev_C, c2*n2*n2 * sizeof(float));
-	if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
-		goto Error;
-
-	cudaStatus = cudaMalloc((void**)&dev_F2, c3*c2*f2*f2 * sizeof(float));
-	if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
-		goto Error;
-
-	cudaStatus = cudaMalloc((void**)&dev_E, c3*n3*n3 * sizeof(float));
-	if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
-		goto Error;
+    // Choose which GPU to run on, change this on a multi-GPU system.
+    cudaStatus = cudaSetDevice(0);
+    if (check_error_status(cudaStatus, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?\n"))
+        goto Error;
 
 
-	// Copy input data from host memory to GPU buffers.
-	cudaStatus = cudaMemcpy(dev_A, A, c1*n1*n1 * sizeof(float), cudaMemcpyHostToDevice);
-	if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
-		goto Error;
+    // Allocate buffers on GPU
+    cudaStatus = cudaMalloc((void**)&dev_A, c1*n1*n1 * sizeof(float));
+    if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
+        goto Error;
 
-	cudaStatus = cudaMemcpy(dev_F1, Filter1, c2*c1*f1*f1 * sizeof(float), cudaMemcpyHostToDevice);
-	if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
-		goto Error;
+    cudaStatus = cudaMalloc((void**)&dev_F1, c2*c1*f1*f1 * sizeof(float));
+    if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
+        goto Error;
 
-	cudaStatus = cudaMemcpy(dev_F2, Filter2, c3*c2*f2*f2 * sizeof(float), cudaMemcpyHostToDevice);
-	if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
-		goto Error;
+    cudaStatus = cudaMalloc((void**)&dev_C, c2*n2*n2 * sizeof(float));
+    if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
+        goto Error;
 
-	// Run first convolution processing
-	//int T = (int) sqrt(1024 / std::max(c2, c3));
-	//int T = 3;
+    cudaStatus = cudaMalloc((void**)&dev_F2, c3*c2*f2*f2 * sizeof(float));
+    if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
+        goto Error;
 
-	dim3 dimBlock1(std::max(c2, c3), 1);
-	dim3 dimGrid1((n3 + 0) / 1, (n3 + T - 1) / T);
-	//// Launch a kernel on the GPU with one thread for each element.
-	convolution_os_is<<<dimGrid1, dimBlock1, c2 * (1 + f2 - 1) * (T+f2 - 1) * sizeof(float)>>>(n1, n1, c1,
-		                                                                             n2, n2, c2,
-		                                                                             n3, n3, c3,
-		                                                                             f1, f1,
-		                                                                             f2, f2,
-																					 1, T,
-		                                                                             dev_A, dev_F1, dev_C, dev_F2, dev_E);
-
-/*
-	convolution_fusion<<<dimGrid1, dimBlock1>>>(n1, n1, c1,
-		                                        n2, n2, c2,
-		                                        n3, n3, c3,
-		                                        f1, f1,
-		                                        f2, f2,
-		                                        dev_A, dev_F1, dev_C, dev_F2, dev_E);*/
-
-	// Check for any errors launching the kernel
-	cudaStatus = cudaGetLastError();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-		goto Error;
-	}
-
-	// cudaDeviceSynchronize waits for the kernel to finish, and returns
-	// any errors encountered during the launch.
-	cudaStatus = cudaDeviceSynchronize();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-		goto Error;
-	}
+    cudaStatus = cudaMalloc((void**)&dev_E, c3*n3*n3 * sizeof(float));
+    if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
+        goto Error;
 
 
-	// Copy output result from GPU
-	cudaStatus = cudaMemcpy(C, dev_C, c2*n2*n2 * sizeof(float), cudaMemcpyDeviceToHost);
-	if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
-		goto Error;
+    // Copy input data from host memory to GPU buffers.
+    cudaStatus = cudaMemcpy(dev_A, A, c1*n1*n1 * sizeof(float), cudaMemcpyHostToDevice);
+    if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
+        goto Error;
 
-	cudaStatus = cudaMemcpy(E, dev_E, c3*n3*n3 * sizeof(float), cudaMemcpyDeviceToHost);
-	if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
-		goto Error;
+    cudaStatus = cudaMemcpy(dev_F1, Filter1, c2*c1*f1*f1 * sizeof(float), cudaMemcpyHostToDevice);
+    if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
+        goto Error;
 
-	cudaEventRecord(stopGPU, 0);
-	cudaEventSynchronize(stopGPU);
-	float elapsedTimeGPU;
-	cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
-	fprintf(stdout, "Elapsed GPU time: %.3f\n", elapsedTimeGPU);
-	fflush(stdout);
+    cudaStatus = cudaMemcpy(dev_F2, Filter2, c3*c2*f2*f2 * sizeof(float), cudaMemcpyHostToDevice);
+    if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
+        goto Error;
+
+    // Run first convolution processing
+
+    dim3 dimBlock1(c2, 1);
+    dim3 dimGrid1((n2 + T - 1) / T, (n2 + T - 1) / T);
+    // Launch a kernel on the GPU with one thread for each element.
+    convolution_separable<<<dimGrid1, dimBlock1>>>(n1, n1, c1,
+                                                   n2, n2, c2,
+                                                   f1, f1,
+                                                   T, T,
+                                                   dev_A, dev_F1, dev_C);
+
+    //// Check for any errors launching the kernel
+    //cudaStatus = cudaGetLastError();
+    //if (cudaStatus != cudaSuccess) {
+    //    fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+    //    goto Error;
+    //}
+
+    // cudaDeviceSynchronize waits for the kernel to finish, and returns
+    // any errors encountered during the launch.
+    cudaStatus = cudaDeviceSynchronize();
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+        goto Error;
+    }
+
+    // Run second convolution processing
+
+    dim3 dimBlock2(c3, 1);
+    dim3 dimGrid2((n3 + T - 1) / T, (n3 + T - 1) / T);
+    // Launch a kernel on the GPU with one thread for each element.
+    convolution_one_to_one<<<dimGrid2, dimBlock2>>>(n2, n2, c2,
+                                                    n3, n3, c3,
+                                                    f2, f2,
+                                                    T, T,
+                                                    dev_C, dev_F2, dev_E);
+
+    //// Check for any errors launching the kernel
+    //cudaStatus = cudaGetLastError();
+    //if (cudaStatus != cudaSuccess) {
+    //    fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+    //    goto Error;
+    //}
+
+    // cudaDeviceSynchronize waits for the kernel to finish, and returns
+    // any errors encountered during the launch.
+    cudaStatus = cudaDeviceSynchronize();
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+        goto Error;
+    }
+
+
+    // Copy output result from GPU
+    cudaStatus = cudaMemcpy(C, dev_C, c2*n2*n2 * sizeof(float), cudaMemcpyDeviceToHost);
+    if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
+        goto Error;
+
+    cudaStatus = cudaMemcpy(E, dev_E, c3*n3*n3 * sizeof(float), cudaMemcpyDeviceToHost);
+    if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
+        goto Error;
+
+    cudaEventRecord(stopGPU, 0);
+    cudaEventSynchronize(stopGPU);
+    float elapsedTimeGPU;
+    cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
+    fprintf(stdout, "Elapsed GPU time: %.3f\n", elapsedTimeGPU);
+    fflush(stdout);
 
 Error:
-	cudaFree(dev_E);
-	cudaFree(dev_F2);
-	cudaFree(dev_C);
-	cudaFree(dev_F1);
-	cudaFree(dev_A);
+    cudaFree(dev_E);
+    cudaFree(dev_F2);
+    cudaFree(dev_C);
+    cudaFree(dev_F1);
+    cudaFree(dev_A);
 
-	cudaEventDestroy(startGPU);
-	cudaEventDestroy(stopGPU);
+    cudaEventDestroy(startGPU);
+    cudaEventDestroy(stopGPU);
 
-	return cudaStatus;
+    return cudaStatus;
+}
+
+cudaError_t make_dep_sep_fused(float *A,
+                               float *Filter1,
+                               float *C,
+                               float *Filter2,
+                               float *E,
+                               int n1, int c1,
+                               int n2, int c2,
+                               int n3, int c3,
+                               int f1, int f2)
+{
+    float *dev_A = 0;
+    float *dev_F1 = 0;
+    float *dev_C = 0;
+    float *dev_F2 = 0;
+    float *dev_E = 0;
+    cudaError_t cudaStatus;
+
+    // Time measurement
+    cudaEvent_t startGPU, stopGPU;
+    cudaEventCreate(&startGPU);
+    cudaEventCreate(&stopGPU);
+    cudaEventRecord(startGPU, 0);
+
+
+    // Choose which GPU to run on, change this on a multi-GPU system.
+    cudaStatus = cudaSetDevice(0);
+    if (check_error_status(cudaStatus, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?\n"))
+        goto Error;
+
+
+    // Allocate buffers on GPU
+    cudaStatus = cudaMalloc((void**)&dev_A, c1*n1*n1 * sizeof(float));
+    if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
+        goto Error;
+
+    cudaStatus = cudaMalloc((void**)&dev_F1, c2*c1*f1*f1 * sizeof(float));
+    if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
+        goto Error;
+
+    cudaStatus = cudaMalloc((void**)&dev_C, c2*n2*n2 * sizeof(float));
+    if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
+        goto Error;
+
+    cudaStatus = cudaMalloc((void**)&dev_F2, c3*c2*f2*f2 * sizeof(float));
+    if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
+        goto Error;
+
+    cudaStatus = cudaMalloc((void**)&dev_E, c3*n3*n3 * sizeof(float));
+    if (check_error_status(cudaStatus, "cudaMalloc failed!\n"))
+        goto Error;
+
+
+    // Copy input data from host memory to GPU buffers.
+    cudaStatus = cudaMemcpy(dev_A, A, c1*n1*n1 * sizeof(float), cudaMemcpyHostToDevice);
+    if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
+        goto Error;
+
+    cudaStatus = cudaMemcpy(dev_F1, Filter1, c2*c1*f1*f1 * sizeof(float), cudaMemcpyHostToDevice);
+    if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
+        goto Error;
+
+    cudaStatus = cudaMemcpy(dev_F2, Filter2, c3*c2*f2*f2 * sizeof(float), cudaMemcpyHostToDevice);
+    if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
+        goto Error;
+
+    // Run first convolution processing
+
+    dim3 dimBlock1(std::max(c2, c3), 1);
+    dim3 dimGrid1((n3 + T - 1) / T, (n3 + T - 1) / T);
+    //// Launch a kernel on the GPU with one thread for each element.
+    convolution_dep_sep_fused<<<dimGrid1, dimBlock1, c2 * (T + f2 - 1) * (T + f2 - 1) * sizeof(float)>>>(n1, n1, c1,
+                                                                                                         n2, n2, c2,
+                                                                                                         n3, n3, c3,
+                                                                                                         f1, f1,
+                                                                                                         f2, f2,
+                                                                                                         T, T,
+                                                                                                         dev_A, dev_F1, dev_C, dev_F2, dev_E);
+
+    // Check for any errors launching the kernel
+    cudaStatus = cudaGetLastError();
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+        goto Error;
+    }
+
+    // cudaDeviceSynchronize waits for the kernel to finish, and returns
+    // any errors encountered during the launch.
+    cudaStatus = cudaDeviceSynchronize();
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+        goto Error;
+    }
+
+
+    // Copy output result from GPU
+    cudaStatus = cudaMemcpy(C, dev_C, c2*n2*n2 * sizeof(float), cudaMemcpyDeviceToHost);
+    if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
+        goto Error;
+
+    cudaStatus = cudaMemcpy(E, dev_E, c3*n3*n3 * sizeof(float), cudaMemcpyDeviceToHost);
+    if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
+        goto Error;
+
+    cudaEventRecord(stopGPU, 0);
+    cudaEventSynchronize(stopGPU);
+    float elapsedTimeGPU;
+    cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
+    fprintf(stdout, "Elapsed GPU time: %.3f\n", elapsedTimeGPU);
+    fflush(stdout);
+
+Error:
+    cudaFree(dev_E);
+    cudaFree(dev_F2);
+    cudaFree(dev_C);
+    cudaFree(dev_F1);
+    cudaFree(dev_A);
+
+    cudaEventDestroy(startGPU);
+    cudaEventDestroy(stopGPU);
+
+    return cudaStatus;
 }
 
 
 bool test_convolutions() {
-	int C1 = 32, C2 = 32, C3 = 32, F1 = 3, F2 = 3;
-	// int C1 = 1, C2 = 1, C3 = 1, F1 = 3, F2 = 3;
-	// int N1 = rand() % 100 + F1 + F2 + 400;
-	int N1 = 160 + F1 + F2;
-	// int N1 = rand() % 350 + F1 + F2;
-	// int N1 = rand() % 200 + 3, C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
-	std::cout << "Start" << std::endl;
+    int C1 = 64, C3 = 64, F1 = 3, F2 = 1;
+    int C2 = C1;
+    // int C1 = 1, C2 = 1, C3 = 1, F1 = 3, F2 = 3;
+    // int N1 = rand() % 100 + F1 + F2 + 400;
+    int N1 = 100 + F1 + F2;
+    // int N1 = rand() % 350 + F1 + F2;
+    // int N1 = rand() % 200 + 3, C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
+    std::cout << "Start" << std::endl;
 
-	int N2 = N1 - F1 + 1;
-	int N3 = N2 - F2 + 1;
+    int N2 = N1 - F1 + 1;
+    int N3 = N2 - F2 + 1;
 
-	std::cout << N1 << " " << N2 << " " << N3 << std::endl;
+    std::cout << N1 << " " << N2 << " " << N3 << std::endl;
 
-	std::vector<float> A(C1*N1*N1);
-	std::vector<float> B(C2*C2*F1*F1, 0.0f);
-	std::vector<float> C_1(C2*N2*N2);
-	std::vector<float> C_2(C2*N2*N2);
-	std::vector<float> D(C3*C2*F2*F2);
-	std::vector<float> E_1(C3*N3*N3);
-	std::vector<float> E_2(C3*N3*N3);
+    std::vector<float> A(C1*N1*N1);
+    std::vector<float> B(C2*C2*F1*F1, 0.0f);
+    std::vector<float> C_1(C2*N2*N2);
+    std::vector<float> C_2(C2*N2*N2);
+    std::vector<float> D(C3*C2*F2*F2);
+    std::vector<float> E_1(C3*N3*N3);
+    std::vector<float> E_2(C3*N3*N3);
 
-	for (int c = 0; c < C1; c++)
-	for (int x = 0; x < N1; x++)
-	for (int y = 0; y < N1; y++) {
-		A[id(c, x, y, C1, N1, N1)] = rand() % 3 + 1.0 / (1.0 + rand() % 3);
-	}
+    for (int c = 0; c < C1; c++)
+    for (int x = 0; x < N1; x++)
+    for (int y = 0; y < N1; y++) {
+        A[id(c, x, y, C1, N1, N1)] = rand() % 3 + 1.0 / (1.0 + rand() % 3);
+    }
 
-	for (int c2 = 0; c2 < C2; c2++)
-	for (int x = 0; x < F1; x++)
-	for (int y = 0; y < F1; y++) {
-		B[f_id(c2, c2, x, y, C2, C2, F1, F1)] = rand() % 3 + 1.0 / (1.0 + rand() % 3);
-	}
+    for (int c2 = 0; c2 < C2; c2++)
+    for (int x = 0; x < F1; x++)
+    for (int y = 0; y < F1; y++) {
+        B[f_id(c2, c2, x, y, C2, C2, F1, F1)] = rand() % 3 + 1.0 / (1.0 + rand() % 3);
+    }
 
-	for (int c3 = 0; c3 < C3; c3++)
-	for (int c2 = 0; c2 < C2; c2++)
-	for (int x = 0; x < F2; x++)
-	for (int y = 0; y < F2; y++) {
-		D[f_id(c3, c2, x, y, C3, C2, F2, F2)] = rand() % 3 + 1.0 / (1.0 + rand() % 3);
-	}
+    for (int c3 = 0; c3 < C3; c3++)
+    for (int c2 = 0; c2 < C2; c2++)
+    for (int x = 0; x < F2; x++)
+    for (int y = 0; y < F2; y++) {
+        D[f_id(c3, c2, x, y, C3, C2, F2, F2)] = rand() % 3 + 1.0 / (1.0 + rand() % 3);
+    }
 
-	cudaError cudaStatus;
+    cudaError cudaStatus;
 
-	std::cout << "Simple convolution " << std::endl;
+    std::cout << "Two convolutions " << std::endl;
 
-	cudaStatus = make_two_concolution(A.data(), B.data(), C_1.data(),
-		                              D.data(), E_1.data(),
-		                              N1, C1, N2, C2, N3, C3, F1, F2);
+    cudaStatus = make_two_convolution(A.data(), B.data(), C_1.data(),
+                                      D.data(), E_1.data(),
+                                      N1, C1, N2, C2, N3, C3, F1, F2);
 
-	if (check_error_status(cudaStatus, "Simple convolution failed!\n"))
-		return false;
+    if (check_error_status(cudaStatus, "Two convolutions failed!\n"))
+        return false;
 
-	std::cout << "OS-IS convolution " << std::endl;
+    std::cout << "Two layer dep sep" << std::endl;
 
-	cudaStatus = make_two_concolution_os_is(A.data(), B.data(), C_2.data(),
-				                            D.data(), E_2.data(),
-				                            N1, C1, N2, C2, N3, C3, F1, F2);
+    cudaStatus = make_two_layer_dep_sep(A.data(), B.data(), C_1.data(),
+                                        D.data(), E_1.data(),
+                                        N1, C1, N2, C2, N3, C3, F1, F2);
 
-	if (check_error_status(cudaStatus, "OS-IS convolution failed!\n"))
-		return false;
+    if (check_error_status(cudaStatus, "Two layer dep sep failed!\n"))
+        return false;
 
-	bool is_Passed = true;
+    std::cout << "Fused layer dep sep" << std::endl;
 
-	is_Passed &= compare_convolution(N2, N2, F1, F1, C1, C2, A, B, C_1, 1e-1);
-	is_Passed &= compare_convolution(N3, N3, F2, F2, C2, C3, C_1, D, E_1, 1e-1);
+    cudaStatus = make_dep_sep_fused(A.data(), B.data(), C_2.data(),
+                                    D.data(), E_2.data(),
+                                    N1, C1, N2, C2, N3, C3, F1, F2);
 
-	is_Passed &= compare_results(E_1, E_2, 1e-1);
+    if (check_error_status(cudaStatus, "Fused layer dep sep failed!\n"))
+        return false;
 
-	return is_Passed;
+    bool is_Passed = true;
+
+    is_Passed &= compare_convolution(N2, N2, F1, F1, C1, C2, A, B, C_1, 1e-1);
+    is_Passed &= compare_convolution(N3, N3, F2, F2, C2, C3, C_1, D, E_1, 1e-1);
+
+    is_Passed &= compare_results(E_1, E_2, 1e-1);
+
+    return is_Passed;
 }
 
 
 int main()
 {
-	bool is_Passed = test_convolutions();
+    bool is_Passed = test_convolutions();
 
-	std::cout << "Total: ";
-	if (is_Passed) {
-		std::cout << "Passed!" << std::endl;
-	}
-	else {
-		std::cout << "Failed!" << std::endl;
-	}
+    std::cout << "Total: ";
+    if (is_Passed) {
+        std::cout << "Passed!" << std::endl;
+    }
+    else {
+        std::cout << "Failed!" << std::endl;
+    }
 
-	return 0;
+    return 0;
 }
