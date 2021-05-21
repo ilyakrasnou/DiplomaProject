@@ -12,7 +12,7 @@
 #define f_id(a, c, x, y, A, C, X, Y) ((x) + (X) * ((y) + (Y) * ((c) + (C) * (a))))
 #define ReLU(v) (max((v), 0.0f))
 
-const int T = 1;
+int T = 5;
 
 __global__ void convolution(int N1y, int N1x, int C1,
                             int N2y, int N2x, int C2,
@@ -565,7 +565,7 @@ cudaError_t make_two_layer_dep_sep(float *A,
     cudaEventSynchronize(stopGPU);
     float elapsedTimeGPU;
     cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
-    fprintf(stdout, "Elapsed GPU time: %.3f\n", elapsedTimeGPU);
+    fprintf(stdout, " %.3f", elapsedTimeGPU);
     fflush(stdout);
 
 Error:
@@ -688,7 +688,7 @@ cudaError_t make_dep_sep_fused(float *A,
     cudaEventSynchronize(stopGPU);
     float elapsedTimeGPU;
     cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
-    fprintf(stdout, "Elapsed GPU time: %.3f\n", elapsedTimeGPU);
+    fprintf(stdout, " %.3f", elapsedTimeGPU);
     fflush(stdout);
 
 Error:
@@ -811,7 +811,7 @@ cudaError_t make_dep_sep_fused_reversed(float *A,
     cudaEventSynchronize(stopGPU);
     float elapsedTimeGPU;
     cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
-    fprintf(stdout, "Elapsed GPU time: %.3f\n", elapsedTimeGPU);
+    fprintf(stdout, " %.3f", elapsedTimeGPU);
     fflush(stdout);
 
 Error:
@@ -828,20 +828,14 @@ Error:
 }
 
 
-bool test_convolutions() {
-    int C1 = 64, C3 = 64, F1 = 3, F2 = 1;
-    int C2 = C1;
-    // int C1 = 1, C2 = 1, C3 = 1, F1 = 3, F2 = 3;
-    // int N1 = rand() % 100 + F1 + F2 + 400;
-    int N1 = 100 + F1 + F2;
-    // int N1 = rand() % 350 + F1 + F2;
-    // int N1 = rand() % 200 + 3, C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
-    std::cout << "Start" << std::endl;
+bool test_convolutions(int Tile, int N1, int F1, int C1, int C3) {
+    T = Tile;
+    int C2 = C1, F2 = 1;
 
     int N2 = N1 - F1 + 1;
     int N3 = N2 - F2 + 1;
 
-    std::cout << N1 << " " << N2 << " " << N3 << std::endl;
+    std::cout << Tile << " " << N1 << " " << F1 << " " << C1 << " " << C3;
 
     std::vector<float> A(C1*N1*N1);
     std::vector<float> B(C2*C2*F1*F1, 0.0f);
@@ -872,16 +866,16 @@ bool test_convolutions() {
 
     cudaError cudaStatus;
 
-    std::cout << "Two convolutions " << std::endl;
+    /*std::cout << "Two convolutions " << std::endl;
 
     cudaStatus = make_two_convolution(A.data(), B.data(), C_1.data(),
                                       D.data(), E_1.data(),
-                                      N1, C1, N2, C2, N3, C3, F1, F2);
+                                      N1, C1, N2, C2, N3, C3, F1, F2);*/
 
-    if (check_error_status(cudaStatus, "Two convolutions failed!\n"))
-        return false;
+    /*if (check_error_status(cudaStatus, "Two convolutions failed!\n"))
+        return false;*/
 
-    std::cout << "Two layer dep sep" << std::endl;
+    //std::cout << "Two layer dep sep" << std::endl;
 
     cudaStatus = make_two_layer_dep_sep(A.data(), B.data(), C_1.data(),
                                         D.data(), E_1.data(),
@@ -890,16 +884,16 @@ bool test_convolutions() {
     if (check_error_status(cudaStatus, "Two layer dep sep failed!\n"))
         return false;
 
-    std::cout << "Fused layer dep sep reversed" << std::endl;
+    /*std::cout << "Fused layer dep sep reversed" << std::endl;
 
     cudaStatus = make_dep_sep_fused_reversed(A.data(), B.data(), C_2.data(),
                                              D.data(), E_2.data(),
-                                             N1, C1, N2, C2, N3, C3, F1, F2);
+                                             N1, C1, N2, C2, N3, C3, F1, F2);*/
 
-    if (check_error_status(cudaStatus, "Fused layer dep sep reversed failed!\n"))
-        return false;
+    /*if (check_error_status(cudaStatus, "Fused layer dep sep reversed failed!\n"))
+        return false;*/
 
-    std::cout << "Fused layer dep sep" << std::endl;
+    //std::cout << "Fused layer dep sep" << std::endl;
 
     cudaStatus = make_dep_sep_fused(A.data(), B.data(), C_2.data(),
                                     D.data(), E_2.data(),
@@ -910,10 +904,12 @@ bool test_convolutions() {
 
     bool is_Passed = true;
 
-    is_Passed &= compare_convolution(N2, N2, F1, F1, C1, C2, A, B, C_1, 1e-1);
-    is_Passed &= compare_convolution(N3, N3, F2, F2, C2, C3, C_1, D, E_1, 1e-1);
+    //is_Passed &= compare_convolution(N2, N2, F1, F1, C1, C2, A, B, C_1, 1e-1);
+    //is_Passed &= compare_convolution(N3, N3, F2, F2, C2, C3, C_1, D, E_1, 1e-1);
 
-    is_Passed &= compare_results(E_1, E_2, 1e-1);
+    //is_Passed &= compare_results(E_1, E_2, 1e-1);
+
+    std::cout << std::endl;
 
     return is_Passed;
 }
@@ -921,15 +917,27 @@ bool test_convolutions() {
 
 int main()
 {
-    bool is_Passed = test_convolutions();
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(0);
+    freopen("parameters.csv", "r", stdin);
+    freopen("results.csv", "w", stdout);
 
-    std::cout << "Total: ";
+    //bool is_Passed = test_convolutions(1, 100, 3, 64, 64);
+    bool is_Passed = true;
+
+    int Tile, N, F, C1, C2;
+
+    while (std::cin >> Tile >> N >> F >> C1 >> C2) {
+        is_Passed &= test_convolutions(Tile, N, F, C1, C2);
+    }
+
+    /*std::cout << "Total: ";
     if (is_Passed) {
         std::cout << "Passed!" << std::endl;
     }
     else {
         std::cout << "Failed!" << std::endl;
-    }
+    }*/
 
     return 0;
 }
