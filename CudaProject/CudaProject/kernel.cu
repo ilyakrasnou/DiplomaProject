@@ -150,7 +150,7 @@ __global__ void convolution_dep_sep_fused(int N1y, int N1x, int C1,
                 t += I[id(c0, tx_0 + bx + f1x, ty_0 + by + f1y, C1, N1x, N1y)] * F1[f_id(c0, c0, f1x, f1y, C2, C1, F1x, F1y)];
             }
 
-            buffer[id(bx, by, c0, Bx, By, C2)] = ReLU(t);
+            buffer[id(c0, bx, by, C2, Bx, By)] = ReLU(t);
         }
     }
 
@@ -162,7 +162,7 @@ __global__ void convolution_dep_sep_fused(int N1y, int N1x, int C1,
             float t = 0;
 
             for (int c2 = 0; c2 < C2; c2++) {
-                t += buffer[id(bx, by, c2, Bx, By, C2)] * F2[c0*C2+c2];
+                t += buffer[id(c2, bx, by, C2, Bx, By)] * F2[c0*C2+c2];
             }
 
             O2[id(c0, tx_0 + bx, ty_0 + by, C3, N3x, N3y)] = ReLU(t);
