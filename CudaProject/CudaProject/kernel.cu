@@ -12,104 +12,67 @@
 #define f_id(a, c, x, y, A, C, X, Y) ((x) + (X) * ((y) + (Y) * ((c) + (C) * (a))))
 #define ReLU(v) (max((v), 0.0f))
 
-int T = 5;
-
 __global__ void convolution(int N1y, int N1x, int C1,
                             int N2y, int N2x, int C2,
                             int Fy, int Fx,
-                            int Ty, int Tx,
                             const float *I,
                             const float *F,
                             // const float *B,
                             float *O) {
-    const int ty = blockIdx.x; // < N2y / Ty
-    const int tx = blockIdx.y; // < N2x / Tx
+    const int n2y = blockIdx.x; // < N2y
+    const int n2x = blockIdx.y; // < N2x
     const int c2 = threadIdx.x;
 
-    const int n2y_bound = min(N2y, (ty + 1)*Ty);
-    const int n2x_bound = min(N2x, (tx + 1)*Tx);
+    float t = 0;
 
-    const int n2y_0 = ty * Ty;
-    const int n2x_0 = tx * Tx;
-
-    float t;
-
-    //for (int c2 = 0; c2 < C2; ++c2)
-    for (int n2y = n2y_0; n2y < n2y_bound; ++n2y)
-    for (int n2x = n2x_0; n2x < n2x_bound; ++n2x) {
-        t = 0;
-
-        for (int c1 = 0; c1 < C1; ++c1)
-        for (int fx = 0; fx < Fx; ++fx) {
-        for (int fy = 0; fy < Fy; ++fy)
-            t += I[id(c1, n2x + fx, n2y + fy, C1, N1x, N1y)] * F[f_id(c2, c1, fx, fy, C2, C1, Fx, Fy)];
-        }
-
-        O[id(c2, n2x, n2y, C2, N2x, N2y)] = ReLU(t);
+    for (int c1 = 0; c1 < C1; ++c1)
+    for (int fx = 0; fx < Fx; ++fx) {
+    for (int fy = 0; fy < Fy; ++fy)
+        t += I[id(c1, n2x + fx, n2y + fy, C1, N1x, N1y)] * F[f_id(c2, c1, fx, fy, C2, C1, Fx, Fy)];
     }
+
+    O[id(c2, n2x, n2y, C2, N2x, N2y)] = ReLU(t);
 }
 
 __global__ void convolution_separable(int N1y, int N1x, int C1,
                                       int N2y, int N2x, int C2,
                                       int Fy, int Fx,
-                                      int Ty, int Tx,
                                       const float *I,
                                       const float *F,
                                       // const float *B,
                                       float *O) {
-    const int ty = blockIdx.x; // < N2y / Ty
-    const int tx = blockIdx.y; // < N2x / Tx
+    const int n2y = blockIdx.x; // < N2y
+    const int n2x = blockIdx.y; // < N2x
     const int c2 = threadIdx.x;
 
-    const int n2y_bound = min(N2y, (ty + 1)*Ty);
-    const int n2x_bound = min(N2x, (tx + 1)*Tx);
-
-    const int n2y_0 = ty * Ty;
-    const int n2x_0 = tx * Tx;
-
-    for (int n2y = n2y_0; n2y < n2y_bound; ++n2y)
-    for (int n2x = n2x_0; n2x < n2x_bound; ++n2x) {
-        float t = 0;
-
-        for (int fy = 0; fy < Fy; ++fy)
-        for (int fx = 0; fx < Fx; ++fx) {
-            t += I[id(c2, n2x + fx, n2y + fy, C1, N1x, N1y)] * F[f_id(c2, c2, fx, fy, C2, C1, Fx, Fy)];
-        }
-
-        O[id(c2, n2x, n2y, C2, N2x, N2y)] = ReLU(t);
+    float t = 0;
+ 
+    for (int fy = 0; fy < Fy; ++fy)
+    for (int fx = 0; fx < Fx; ++fx) {
+        t += I[id(c2, n2x + fx, n2y + fy, C1, N1x, N1y)] * F[f_id(c2, c2, fx, fy, C2, C1, Fx, Fy)];
     }
+ 
+    O[id(c2, n2x, n2y, C2, N2x, N2y)] = ReLU(t);
 }
 
 __global__ void convolution_one_to_one(int N1y, int N1x, int C1,
                                        int N2y, int N2x, int C2,
                                        int Fy, int Fx,
-                                       int Ty, int Tx,
                                        const float *I,
                                        const float *F,
                                        // const float *B,
                                        float *O) {
-    const int ty = blockIdx.x; // < N2y / Ty
-    const int tx = blockIdx.y; // < N2x / Tx
+    const int n2y = blockIdx.x; // < N2y
+    const int n2x = blockIdx.y; // < N2x
     const int c2 = threadIdx.x;
 
-    const int n2y_bound = min(N2y, (ty + 1)*Ty);
-    const int n2x_bound = min(N2x, (tx + 1)*Tx);
+    float t = 0;
 
-    const int n2y_0 = ty * Ty;
-    const int n2x_0 = tx * Tx;
-
-    float t;
-
-    for (int n2y = n2y_0; n2y < n2y_bound; ++n2y)
-    for (int n2x = n2x_0; n2x < n2x_bound; ++n2x) {
-        t = 0;
-
-        for (int c1 = 0; c1 < C1; ++c1) {
-            t += I[id(c1, n2x, n2y, C1, N1x, N1y)] * F[f_id(c2, c1, 0, 0, C2, C1, Fx, Fy)];
-        }
-
-        O[id(c2, n2x, n2y, C2, N2x, N2y)] = ReLU(t);
+    for (int c1 = 0; c1 < C1; ++c1) {
+        t += I[id(c1, n2x, n2y, C1, N1x, N1y)] * F[f_id(c2, c1, 0, 0, C2, C1, Fx, Fy)];
     }
+
+    O[id(c2, n2x, n2y, C2, N2x, N2y)] = ReLU(t);
 }
 
 extern __shared__ float buffer[];
@@ -119,7 +82,6 @@ __global__ void convolution_dep_sep_fused(int N1y, int N1x, int C1,
                                           int N3y, int N3x, int C3,
                                           int F1y, int F1x,
                                           int F2y, int F2x,
-                                          int Ty, int Tx,
                                           const float *I,
                                           const float *F1,
                                           //   const float *B1,
@@ -127,46 +89,32 @@ __global__ void convolution_dep_sep_fused(int N1y, int N1x, int C1,
                                           const float *F2,
                                           // const float *B2,
                                           float *O2) {
-    const int ty_0 = blockIdx.x * Ty;
-    const int tx_0 = blockIdx.y * Tx;
+    const int n2y = blockIdx.x; // = n3y
+    const int n2x = blockIdx.y; // = n3x
     const int c0 = threadIdx.x;
 
-    const int By = Ty + F2y - 1;
-    const int Bx = Tx + F2x - 1;
-
-    const int ty_bound = min(N3y - ty_0, Ty);
-    const int tx_bound = min(N3x - tx_0, Tx);
-
-    float t;
-
     if (c0 < C2) {
-        for (int by = 0; by < ty_bound; ++by)
-        for (int bx = 0; bx < tx_bound; ++bx) {
-            float t = 0;
+        float t = 0;
 
-            // calculate value for intermediate layer
-            for (int f1y = 0; f1y < F1y; f1y++)
-            for (int f1x = 0; f1x < F1x; f1x++) {
-                t += I[id(c0, tx_0 + bx + f1x, ty_0 + by + f1y, C1, N1x, N1y)] * F1[f_id(c0, c0, f1x, f1y, C2, C1, F1x, F1y)];
-            }
-
-            buffer[id(c0, bx, by, C2, Bx, By)] = ReLU(t);
+        // calculate value for intermediate layer
+        for (int f1y = 0; f1y < F1y; f1y++)
+        for (int f1x = 0; f1x < F1x; f1x++) {
+            t += I[id(c0, n2x + f1x, n2y + f1y, C1, N1x, N1y)] * F1[f_id(c0, c0, f1x, f1y, C2, C1, F1x, F1y)];
         }
+
+        buffer[c0] = ReLU(t);
     }
 
     __syncthreads();
 
     if (c0 < C3) {
-        for (int by = 0; by < ty_bound; ++by)
-        for (int bx = 0; bx < tx_bound; ++bx) {
-            float t = 0;
+        float t = 0;
 
-            for (int c2 = 0; c2 < C2; c2++) {
-                t += buffer[id(c2, bx, by, C2, Bx, By)] * F2[c0*C2+c2];
-            }
-
-            O2[id(c0, tx_0 + bx, ty_0 + by, C3, N3x, N3y)] = ReLU(t);
+        for (int c2 = 0; c2 < C2; c2++) {
+            t += buffer[c2] * F2[c0*C2+c2];
         }
+
+        O2[id(c0, n2x, n2y, C3, N3x, N3y)] = ReLU(t);
     }
 }
 
@@ -175,7 +123,6 @@ __global__ void convolution_dep_sep_fused_reversed(int N1y, int N1x, int C1,
                                                    int N3y, int N3x, int C3,
                                                    int F1y, int F1x,
                                                    int F2y, int F2x,
-                                                   int Ty, int Tx,
                                                    const float *I,
                                                    const float *F1,
                                                    //   const float *B1,
@@ -183,46 +130,35 @@ __global__ void convolution_dep_sep_fused_reversed(int N1y, int N1x, int C1,
                                                    const float *F2,
                                                    // const float *B2,
                                                    float *O2) {
-    const int ty_0 = blockIdx.x * Ty;
-    const int tx_0 = blockIdx.y * Tx;
+    const int n2y = blockIdx.x;
+    const int n2x = blockIdx.y;
     const int c0 = threadIdx.x;
 
-    const int By = Ty + F2y - 1;
-    const int Bx = Tx + F2x - 1;
-
-    const int ty_bound = min(N3y - ty_0, Ty);
-    const int tx_bound = min(N3x - tx_0, Tx);
-
-    float t;
-
     if (c0 < C2) {
-        for (int by = 0; by < ty_bound + F2y - 1; ++by)
-        for (int bx = 0; bx < tx_bound + F2x - 1; ++bx) {
+        for (int by = 0; by < F2y; ++by)
+        for (int bx = 0; bx < F2x; ++bx) {
             float t = 0;
 
             for (int c1 = 0; c1 < C1; c1++) {
-                t += I[id(c1, tx_0 + bx, ty_0 + by, C1, N1x, N1y)] * F1[c0*C1 + c1];
+                t += I[id(c1, n2x + bx, n2y + by, C1, N1x, N1y)] * F1[c0*C1 + c1];
             }
 
-            buffer[id(c0, bx, by, C2, Bx, By)] = ReLU(t);
+            buffer[id(c0, bx, by, C2, F2x, F2y)] = ReLU(t);
         }        
     }
 
     __syncthreads();
 
     if (c0 < C3) {
-        for (int by = 0; by < ty_bound; ++by)
-        for (int bx = 0; bx < tx_bound; ++bx) {
-            float t = 0;
+        float t = 0;
 
-            // calculate value for intermediate layer
-            for (int f2y = 0; f2y < F2y; f2y++)
-            for (int f2x = 0; f2x < F2x; f2x++) {
-                t += buffer[id(c0, bx + f2x, by + f2y, C2, Bx, By)] * F2[f_id(c0, c0, f2x, f2y, C3, C2, F2x, F2y)];
-            }
-
-            O2[id(c0, tx_0 + bx, ty_0 + by, C3, N3x, N3y)] = ReLU(t);
+        // calculate value for intermediate layer
+        for (int f2y = 0; f2y < F2y; f2y++)
+        for (int f2x = 0; f2x < F2x; f2x++) {
+            t += buffer[id(c0, f2x, f2y, C2, F2x, F2y)] * F2[f_id(c0, c0, f2x, f2y, C3, C2, F2x, F2y)];
         }
+
+        O2[id(c0, n2x, n2y, C3, N3x, N3y)] = ReLU(t);
     }
 }
 
@@ -354,12 +290,11 @@ cudaError_t make_two_convolution(float *A,
     // Run first convolution processing
 
     dim3 dimBlock1(c2, 1);
-    dim3 dimGrid1((n2 + T - 1) / T, (n2 + T - 1) / T);
+    dim3 dimGrid1(n2, n2);
     // Launch a kernel on the GPU with one thread for each element.
     convolution<<<dimGrid1, dimBlock1>>>(n1, n1, c1,
                                          n2, n2, c2,
                                          f1, f1,
-                                         T, T,
                                          dev_A, dev_F1, dev_C);
 
     //// Check for any errors launching the kernel
@@ -380,12 +315,11 @@ cudaError_t make_two_convolution(float *A,
     // Run second convolution processing
 
     dim3 dimBlock2(c3, 1);
-    dim3 dimGrid2((n3 + T - 1) / T, (n3 + T - 1) / T);
+    dim3 dimGrid2(n3, n3);
     // Launch a kernel on the GPU with one thread for each element.
     convolution<<<dimGrid2, dimBlock2>>>(n2, n2, c2,
                                          n3, n3, c3,
                                          f2, f2,
-                                         T, T,
                                          dev_C, dev_F2, dev_E);
 
     //// Check for any errors launching the kernel
@@ -502,12 +436,11 @@ cudaError_t make_two_layer_dep_sep(float *A,
     // Run first convolution processing
 
     dim3 dimBlock1(c2, 1);
-    dim3 dimGrid1((n2 + T - 1) / T, (n2 + T - 1) / T);
+    dim3 dimGrid1(n2, n2);
     // Launch a kernel on the GPU with one thread for each element.
     convolution_separable<<<dimGrid1, dimBlock1>>>(n1, n1, c1,
                                                    n2, n2, c2,
                                                    f1, f1,
-                                                   T, T,
                                                    dev_A, dev_F1, dev_C);
 
     //// Check for any errors launching the kernel
@@ -528,12 +461,11 @@ cudaError_t make_two_layer_dep_sep(float *A,
     // Run second convolution processing
 
     dim3 dimBlock2(c3, 1);
-    dim3 dimGrid2((n3 + T - 1) / T, (n3 + T - 1) / T);
+    dim3 dimGrid2(n3, n3);
     // Launch a kernel on the GPU with one thread for each element.
     convolution_one_to_one<<<dimGrid2, dimBlock2>>>(n2, n2, c2,
                                                     n3, n3, c3,
                                                     f2, f2,
-                                                    T, T,
                                                     dev_C, dev_F2, dev_E);
 
     //// Check for any errors launching the kernel
@@ -649,15 +581,14 @@ cudaError_t make_dep_sep_fused(float *A,
     // Run first convolution processing
 
     dim3 dimBlock1(std::max(c2, c3), 1);
-    dim3 dimGrid1((n3 + T - 1) / T, (n3 + T - 1) / T);
+    dim3 dimGrid1(n3, n3);
     // Launch a kernel on the GPU with one thread for each element.
-    convolution_dep_sep_fused<<<dimGrid1, dimBlock1, c2 * (T + f2 - 1) * (T + f2 - 1) * sizeof(float)>>>(n1, n1, c1,
-                                                                                                         n2, n2, c2,
-                                                                                                         n3, n3, c3,
-                                                                                                         f1, f1,
-                                                                                                         f2, f2,
-                                                                                                         T, T,
-                                                                                                         dev_A, dev_F1, dev_C, dev_F2, dev_E);
+    convolution_dep_sep_fused<<<dimGrid1, dimBlock1, c2 * sizeof(float)>>>(n1, n1, c1,
+                                                                           n2, n2, c2,
+                                                                           n3, n3, c3,
+                                                                           f1, f1,
+                                                                           f2, f2,
+                                                                           dev_A, dev_F1, dev_C, dev_F2, dev_E);
 
     // Check for any errors launching the kernel
     cudaStatus = cudaGetLastError();
@@ -772,15 +703,14 @@ cudaError_t make_dep_sep_fused_reversed(float *A,
     // Run first convolution processing
 
     dim3 dimBlock1(std::max(c2, c3), 1);
-    dim3 dimGrid1((n2 + T - 1) / T, (n2 + T - 1) / T);
+    dim3 dimGrid1(n2, n2);
     // Launch a kernel on the GPU with one thread for each element.
-    convolution_dep_sep_fused_reversed<<<dimGrid1, dimBlock1, c3 * (T + f1 - 1) * (T + f1 - 1) * sizeof(float)>>>(n1, n1, c1,
-                                                                                                                  n1, n1, c3,
-                                                                                                                  n2, n2, c3,
-                                                                                                                  f2, f2,
-                                                                                                                  f1, f1,
-                                                                                                                  T, T,
-                                                                                                                  dev_A, dev_F2, dev_C, dev_F1, dev_E);
+    convolution_dep_sep_fused_reversed<<<dimGrid1, dimBlock1, c3 * f1 * f1 * sizeof(float)>>>(n1, n1, c1,
+                                                                                              n1, n1, c3,
+                                                                                              n2, n2, c3,
+                                                                                              f2, f2,
+                                                                                              f1, f1,
+                                                                                              dev_A, dev_F2, dev_C, dev_F1, dev_E);
 
     // Check for any errors launching the kernel
     cudaStatus = cudaGetLastError();
@@ -828,14 +758,13 @@ Error:
 }
 
 
-bool test_convolutions(int Tile, int N1, int F1, int C1, int C3) {
-    T = Tile;
+bool test_convolutions(int N1, int F1, int C1, int C3) {
     int C2 = C1, F2 = 1;
 
     int N2 = N1 - F1 + 1;
     int N3 = N2 - F2 + 1;
 
-    std::cout << Tile << " " << N1 << " " << F1 << " " << C1 << " " << C3;
+    std::cout << N1 << " " << F1 << " " << C1 << " " << C3;
 
     std::vector<float> A(C1*N1*N1);
     std::vector<float> B(C2*C2*F1*F1, 0.0f);
@@ -870,9 +799,9 @@ bool test_convolutions(int Tile, int N1, int F1, int C1, int C3) {
 
     cudaStatus = make_two_convolution(A.data(), B.data(), C_1.data(),
                                       D.data(), E_1.data(),
-                                      N1, C1, N2, C2, N3, C3, F1, F2);*/
+                                      N1, C1, N2, C2, N3, C3, F1, F2);
 
-    /*if (check_error_status(cudaStatus, "Two convolutions failed!\n"))
+    if (check_error_status(cudaStatus, "Two convolutions failed!\n"))
         return false;*/
 
     //std::cout << "Two layer dep sep" << std::endl;
@@ -888,9 +817,9 @@ bool test_convolutions(int Tile, int N1, int F1, int C1, int C3) {
 
     cudaStatus = make_dep_sep_fused_reversed(A.data(), B.data(), C_2.data(),
                                              D.data(), E_2.data(),
-                                             N1, C1, N2, C2, N3, C3, F1, F2);*/
+                                             N1, C1, N2, C2, N3, C3, F1, F2);
 
-    /*if (check_error_status(cudaStatus, "Fused layer dep sep reversed failed!\n"))
+    if (check_error_status(cudaStatus, "Fused layer dep sep reversed failed!\n"))
         return false;*/
 
     //std::cout << "Fused layer dep sep" << std::endl;
@@ -925,10 +854,10 @@ int main()
     //bool is_Passed = test_convolutions(1, 100, 3, 64, 64);
     bool is_Passed = true;
 
-    int Tile, N, F, C1, C2;
+    int N, F, C1, C2;
 
-    while (std::cin >> Tile >> N >> F >> C1 >> C2) {
-        is_Passed &= test_convolutions(Tile, N, F, C1, C2);
+    while (std::cin >> N >> F >> C1 >> C2) {
+        is_Passed &= test_convolutions(N, F, C1, C2);
     }
 
     /*std::cout << "Total: ";
