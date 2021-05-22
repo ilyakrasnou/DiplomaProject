@@ -14,23 +14,17 @@
 #define f_id(a, c, x, y, A, C, X, Y) ((x) + (X) * ((y) + (Y) * ((c) + (C) * (a))))
 #define ReLU(v) (max((v), 0.0f))
 
+int T = 4;
 
-cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
 
-__global__ void addKernel(int *c, const int *a, const int *b)
-{
-    int i = threadIdx.x;
-    c[i] = a[i] + b[i];
-}
-
-__global__ void convolution_simple(int N1y, int N1x, int C1,
-	                               int N2y, int N2x, int C2,
-	                               int Fy, int Fx,
-	                               int Ty, int Tx,
-	                               const float *I,
-	                               const float *F,
-	                               // const float *B,
-	                               float *O) {
+__global__ void convolution(int N1y, int N1x, int C1,
+	                        int N2y, int N2x, int C2,
+	                        int Fy, int Fx,
+	                        int Ty, int Tx,
+	                        const float *I,
+	                        const float *F,
+	                        // const float *B,
+	                        float *O) {
 	const int ty = blockIdx.x; // < N2y / Ty
 	const int tx = blockIdx.y; // < N2x / Tx
 	const int c2 = threadIdx.x;
@@ -187,7 +181,7 @@ __global__ void convolution_fusion(int N1y, int N1x, int C1,
 extern __shared__ float buffer[];
 
 // right variant of fused layers
-__global__ void convolution_os_is(int N1y, int N1x, int C1,
+__global__ void convolution_fused(int N1y, int N1x, int C1,
 	                              int N2y, int N2x, int C2,
 	                              int N3y, int N3x, int C3,
 	                              int F1y, int F1x,
@@ -206,8 +200,6 @@ __global__ void convolution_os_is(int N1y, int N1x, int C1,
 
 	const int ty_bound = min(N3y - ty_0, Ty);
 	const int tx_bound = min(N3x - tx_0, Tx);
-
-	float t;
 
 	if (c0 < C2) {
 		for (int by = 0; by < ty_bound + F2y - 1; ++by)
@@ -359,7 +351,6 @@ bool check_error_status(cudaError_t status, const char *error_message) {
 	return false;
 }
 
-const int T = 4;
 
 // Helper function for using CUDA to add vectors in parallel.
 cudaError_t make_two_concolution(float *A,
@@ -430,13 +421,13 @@ cudaError_t make_two_concolution(float *A,
 	// Run first convolution processing
 
 	dim3 dimBlock1(c2, 1);
-	dim3 dimGrid1(n2, (n2 + T - 1) / T);
+	dim3 dimGrid1((n2 + T - 1) / T, (n2 + T - 1) / T);
 	// Launch a kernel on the GPU with one thread for each element.
-	convolution_simple<<<dimGrid1, dimBlock1>>>(n1, n1, c1, 
-		                                        n2, n2, c2, 
-		                                        f1, f1, 
-		                                        1, T,  
-		                                        dev_A, dev_F1, dev_C);
+	convolution<<<dimGrid1, dimBlock1>>>(n1, n1, c1, 
+		                                 n2, n2, c2, 
+		                                 f1, f1, 
+		                                 T, T,  
+		                                 dev_A, dev_F1, dev_C);
 
 	//// Check for any errors launching the kernel
 	//cudaStatus = cudaGetLastError();
@@ -456,13 +447,13 @@ cudaError_t make_two_concolution(float *A,
 	// Run second convolution processing
 
 	dim3 dimBlock2(c3, 1);
-	dim3 dimGrid2(n3, (n3 + T - 1) / T);
+	dim3 dimGrid2((n3 + T - 1) / T, (n3 + T - 1) / T);
 	// Launch a kernel on the GPU with one thread for each element.
-	convolution_simple<<<dimGrid2, dimBlock2>>>(n2, n2, c2,
-		                                        n3, n3, c3,
-		                                        f2, f2,
-		                                        1, T, 
-		                                        dev_C, dev_F2, dev_E);
+	convolution<<<dimGrid2, dimBlock2>>>(n2, n2, c2,
+		                                 n3, n3, c3,
+		                                 f2, f2,
+		                                 T, T, 
+		                                 dev_C, dev_F2, dev_E);
 
 	//// Check for any errors launching the kernel
 	//cudaStatus = cudaGetLastError();
@@ -493,7 +484,7 @@ cudaError_t make_two_concolution(float *A,
 	cudaEventSynchronize(stopGPU);
 	float elapsedTimeGPU;
 	cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
-	fprintf(stdout, "Elapsed GPU time: %.3f\n", elapsedTimeGPU);
+	fprintf(stdout, " %.3f", elapsedTimeGPU);
 	fflush(stdout);
 
 Error:
@@ -510,7 +501,7 @@ Error:
 }
 
 // Helper function for using CUDA to add vectors in parallel.
-cudaError_t make_two_concolution_os_is(float *A,
+cudaError_t make_two_concolution_fused(float *A,
 	                                   float *Filter1,
 	                                   float *C,
 	                                   float *Filter2,
@@ -580,23 +571,16 @@ cudaError_t make_two_concolution_os_is(float *A,
 	//int T = 3;
 
 	dim3 dimBlock1(std::max(c2, c3), 1);
-	dim3 dimGrid1((n3 + 0) / 1, (n3 + T - 1) / T);
+	dim3 dimGrid1((n3 + T) / T, (n3 + T - 1) / T);
 	//// Launch a kernel on the GPU with one thread for each element.
-	convolution_os_is<<<dimGrid1, dimBlock1, c2 * (1 + f2 - 1) * (T+f2 - 1) * sizeof(float)>>>(n1, n1, c1,
-		                                                                             n2, n2, c2,
-		                                                                             n3, n3, c3,
-		                                                                             f1, f1,
-		                                                                             f2, f2,
-																					 1, T,
-		                                                                             dev_A, dev_F1, dev_C, dev_F2, dev_E);
+	convolution_fused<<<dimGrid1, dimBlock1, c2 * (T+f2-1) * (T+f2-1) * sizeof(float)>>>(n1, n1, c1,
+		                                                                                 n2, n2, c2,
+		                                                                                 n3, n3, c3,
+		                                                                                 f1, f1,
+		                                                                                 f2, f2,
+					  	  															     T, T,
+		                                                                                 dev_A, dev_F1, dev_C, dev_F2, dev_E);
 
-/*
-	convolution_fusion<<<dimGrid1, dimBlock1>>>(n1, n1, c1,
-		                                        n2, n2, c2,
-		                                        n3, n3, c3,
-		                                        f1, f1,
-		                                        f2, f2,
-		                                        dev_A, dev_F1, dev_C, dev_F2, dev_E);*/
 
 	// Check for any errors launching the kernel
 	cudaStatus = cudaGetLastError();
@@ -627,7 +611,7 @@ cudaError_t make_two_concolution_os_is(float *A,
 	cudaEventSynchronize(stopGPU);
 	float elapsedTimeGPU;
 	cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
-	fprintf(stdout, "Elapsed GPU time: %.3f\n", elapsedTimeGPU);
+	fprintf(stdout, " %.3f", elapsedTimeGPU);
 	fflush(stdout);
 
 Error:
@@ -644,19 +628,13 @@ Error:
 }
 
 
-bool test_convolutions() {
-	int C1 = 32, C2 = 32, C3 = 32, F1 = 3, F2 = 3;
-	// int C1 = 1, C2 = 1, C3 = 1, F1 = 3, F2 = 3;
-	// int N1 = rand() % 100 + F1 + F2 + 400;
-	int N1 = 160 + F1 + F2;
-	// int N1 = rand() % 350 + F1 + F2;
-	// int N1 = rand() % 200 + 3, C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
-	std::cout << "Start" << std::endl;
-
+bool test_convolutions(int Tile, int N, int F1, int F2, int C1, int C2, int C3) {
+	T = Tile;
+	int N1 = N;
 	int N2 = N1 - F1 + 1;
 	int N3 = N2 - F2 + 1;
 
-	std::cout << N1 << " " << N2 << " " << N3 << std::endl;
+	std::cout << Tile << " " << N1 << " " << F1 << " " << F2 << " " << C1 << " " << C2 << " " << C3;
 
 	std::vector<float> A(C1*N1*N1);
 	std::vector<float> B(C2*C2*F1*F1, 0.0f);
@@ -687,7 +665,7 @@ bool test_convolutions() {
 
 	cudaError cudaStatus;
 
-	std::cout << "Simple convolution " << std::endl;
+	//std::cout << "Simple convolution " << std::endl;
 
 	cudaStatus = make_two_concolution(A.data(), B.data(), C_1.data(),
 		                              D.data(), E_1.data(),
@@ -696,21 +674,23 @@ bool test_convolutions() {
 	if (check_error_status(cudaStatus, "Simple convolution failed!\n"))
 		return false;
 
-	std::cout << "OS-IS convolution " << std::endl;
+	//std::cout << "Fused convolution " << std::endl;
 
-	cudaStatus = make_two_concolution_os_is(A.data(), B.data(), C_2.data(),
+	cudaStatus = make_two_concolution_fused(A.data(), B.data(), C_2.data(),
 				                            D.data(), E_2.data(),
 				                            N1, C1, N2, C2, N3, C3, F1, F2);
 
-	if (check_error_status(cudaStatus, "OS-IS convolution failed!\n"))
+	if (check_error_status(cudaStatus, "Fused convolution failed!\n"))
 		return false;
 
 	bool is_Passed = true;
 
-	is_Passed &= compare_convolution(N2, N2, F1, F1, C1, C2, A, B, C_1, 1e-1);
+	/*is_Passed &= compare_convolution(N2, N2, F1, F1, C1, C2, A, B, C_1, 1e-1);
 	is_Passed &= compare_convolution(N3, N3, F2, F2, C2, C3, C_1, D, E_1, 1e-1);
 
-	is_Passed &= compare_results(E_1, E_2, 1e-1);
+	is_Passed &= compare_results(E_1, E_2, 1e-1);*/
+
+    std::cout << std::endl;
 
 	return is_Passed;
 }
@@ -718,15 +698,28 @@ bool test_convolutions() {
 
 int main()
 {
-	bool is_Passed = test_convolutions();
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(0);
+    freopen("parameters.csv", "r", stdin);
+    freopen("results.csv", "w", stdout);
 
-	std::cout << "Total: ";
+	//bool is_Passed = test_convolutions();
+
+    bool is_Passed = true;
+
+    int Tile, N, F1, F2, C1, C2, C3;
+
+    while (std::cin >> Tile >> N >> F1 >> F2 >> C1 >> C2 >> C3) {
+        is_Passed &= test_convolutions(Tile, N, F1, F2, C1, C2, C3);
+    }
+
+	/*std::cout << "Total: ";
 	if (is_Passed) {
 		std::cout << "Passed!" << std::endl;
 	}
 	else {
 		std::cout << "Failed!" << std::endl;
-	}
+	}*/
 
 	return 0;
 }
