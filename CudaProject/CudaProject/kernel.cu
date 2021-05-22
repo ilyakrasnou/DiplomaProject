@@ -8,8 +8,14 @@
 #include <cmath>
 #include <vector>
 
+// channel-last
+//#define id(c, x, y, C, X, Y) ((c) + (C) * ((x) + (X) * (y)))
+//#define f_id(a, c, x, y, A, C, X, Y) ((c) + (C) * ((a) + (A) * ((x) + (X) * (y))))
+
+// channel-first
 #define id(c, x, y, C, X, Y) ((x) + (X) * ((y) + (Y) * (c)))
 #define f_id(a, c, x, y, A, C, X, Y) ((x) + (X) * ((y) + (Y) * ((c) + (C) * (a))))
+
 #define ReLU(v) (max((v), 0.0f))
 
 __global__ void convolution(int N1y, int N1x, int C1,
@@ -176,7 +182,7 @@ bool compare_results(const std::vector<float>& A,
 
     for (int i = 0; i < A.size(); i++) {
         if (!float_compare(A[i], B[i], eps)) {
-            std::cout << i << " " << A[i] << " " << B[i] << std::endl;
+            std::cout << " " << i << " " << A[i] << " " << B[i] << std::endl;
             return false;
         }
     }
@@ -243,7 +249,6 @@ cudaError_t make_two_convolution(float *A,
     cudaEvent_t startGPU, stopGPU;
     cudaEventCreate(&startGPU);
     cudaEventCreate(&stopGPU);
-    cudaEventRecord(startGPU, 0);
 
 
     // Choose which GPU to run on, change this on a multi-GPU system.
@@ -289,6 +294,8 @@ cudaError_t make_two_convolution(float *A,
 
     // Run first convolution processing
 
+    cudaEventRecord(startGPU, 0);
+
     dim3 dimBlock1(c2, 1);
     dim3 dimGrid1(n2, n2);
     // Launch a kernel on the GPU with one thread for each element.
@@ -304,13 +311,13 @@ cudaError_t make_two_convolution(float *A,
     //    goto Error;
     //}
 
-    // cudaDeviceSynchronize waits for the kernel to finish, and returns
-    // any errors encountered during the launch.
-    cudaStatus = cudaDeviceSynchronize();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-        goto Error;
-    }
+    //// cudaDeviceSynchronize waits for the kernel to finish, and returns
+    //// any errors encountered during the launch.
+    //cudaStatus = cudaDeviceSynchronize();
+    //if (cudaStatus != cudaSuccess) {
+    //    fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+    //    goto Error;
+    //}
 
     // Run second convolution processing
 
@@ -322,6 +329,10 @@ cudaError_t make_two_convolution(float *A,
                                          f2, f2,
                                          dev_C, dev_F2, dev_E);
 
+
+    cudaEventRecord(stopGPU, 0);
+    cudaEventSynchronize(stopGPU);
+
     //// Check for any errors launching the kernel
     //cudaStatus = cudaGetLastError();
     //if (cudaStatus != cudaSuccess) {
@@ -329,13 +340,13 @@ cudaError_t make_two_convolution(float *A,
     //    goto Error;
     //}
 
-    // cudaDeviceSynchronize waits for the kernel to finish, and returns
-    // any errors encountered during the launch.
-    cudaStatus = cudaDeviceSynchronize();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-        goto Error;
-    }
+    //// cudaDeviceSynchronize waits for the kernel to finish, and returns
+    //// any errors encountered during the launch.
+    //cudaStatus = cudaDeviceSynchronize();
+    //if (cudaStatus != cudaSuccess) {
+    //    fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+    //    goto Error;
+    //}
 
 
     // Copy output result from GPU
@@ -347,8 +358,6 @@ cudaError_t make_two_convolution(float *A,
     if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
         goto Error;
 
-    cudaEventRecord(stopGPU, 0);
-    cudaEventSynchronize(stopGPU);
     float elapsedTimeGPU;
     cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
     fprintf(stdout, "Elapsed GPU time: %.3f\n", elapsedTimeGPU);
@@ -389,7 +398,6 @@ cudaError_t make_two_layer_dep_sep(float *A,
     cudaEvent_t startGPU, stopGPU;
     cudaEventCreate(&startGPU);
     cudaEventCreate(&stopGPU);
-    cudaEventRecord(startGPU, 0);
 
 
     // Choose which GPU to run on, change this on a multi-GPU system.
@@ -435,6 +443,8 @@ cudaError_t make_two_layer_dep_sep(float *A,
 
     // Run first convolution processing
 
+    cudaEventRecord(startGPU, 0);
+
     dim3 dimBlock1(c2, 1);
     dim3 dimGrid1(n2, n2);
     // Launch a kernel on the GPU with one thread for each element.
@@ -452,11 +462,11 @@ cudaError_t make_two_layer_dep_sep(float *A,
 
     // cudaDeviceSynchronize waits for the kernel to finish, and returns
     // any errors encountered during the launch.
-    cudaStatus = cudaDeviceSynchronize();
+    /*cudaStatus = cudaDeviceSynchronize();
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
         goto Error;
-    }
+    }*/
 
     // Run second convolution processing
 
@@ -477,12 +487,14 @@ cudaError_t make_two_layer_dep_sep(float *A,
 
     // cudaDeviceSynchronize waits for the kernel to finish, and returns
     // any errors encountered during the launch.
-    cudaStatus = cudaDeviceSynchronize();
+    /*cudaStatus = cudaDeviceSynchronize();
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
         goto Error;
-    }
+    }*/
 
+    cudaEventRecord(stopGPU, 0);
+    cudaEventSynchronize(stopGPU);
 
     // Copy output result from GPU
     cudaStatus = cudaMemcpy(C, dev_C, c2*n2*n2 * sizeof(float), cudaMemcpyDeviceToHost);
@@ -493,8 +505,6 @@ cudaError_t make_two_layer_dep_sep(float *A,
     if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
         goto Error;
 
-    cudaEventRecord(stopGPU, 0);
-    cudaEventSynchronize(stopGPU);
     float elapsedTimeGPU;
     cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
     fprintf(stdout, " %.3f", elapsedTimeGPU);
@@ -534,7 +544,6 @@ cudaError_t make_dep_sep_fused(float *A,
     cudaEvent_t startGPU, stopGPU;
     cudaEventCreate(&startGPU);
     cudaEventCreate(&stopGPU);
-    cudaEventRecord(startGPU, 0);
 
 
     // Choose which GPU to run on, change this on a multi-GPU system.
@@ -579,6 +588,7 @@ cudaError_t make_dep_sep_fused(float *A,
         goto Error;
 
     // Run first convolution processing
+    cudaEventRecord(startGPU, 0);
 
     dim3 dimBlock1(std::max(c2, c3), 1);
     dim3 dimGrid1(n3, n3);
@@ -590,20 +600,23 @@ cudaError_t make_dep_sep_fused(float *A,
                                                                            f2, f2,
                                                                            dev_A, dev_F1, dev_C, dev_F2, dev_E);
 
-    // Check for any errors launching the kernel
-    cudaStatus = cudaGetLastError();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-        goto Error;
-    }
+    cudaEventRecord(stopGPU, 0);
+    cudaEventSynchronize(stopGPU);
 
-    // cudaDeviceSynchronize waits for the kernel to finish, and returns
-    // any errors encountered during the launch.
-    cudaStatus = cudaDeviceSynchronize();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-        goto Error;
-    }
+    //// Check for any errors launching the kernel
+    //cudaStatus = cudaGetLastError();
+    //if (cudaStatus != cudaSuccess) {
+    //    fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+    //    goto Error;
+    //}
+
+    //// cudaDeviceSynchronize waits for the kernel to finish, and returns
+    //// any errors encountered during the launch.
+    //cudaStatus = cudaDeviceSynchronize();
+    //if (cudaStatus != cudaSuccess) {
+    //    fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+    //    goto Error;
+    //}
 
 
     // Copy output result from GPU
@@ -615,8 +628,6 @@ cudaError_t make_dep_sep_fused(float *A,
     if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
         goto Error;
 
-    cudaEventRecord(stopGPU, 0);
-    cudaEventSynchronize(stopGPU);
     float elapsedTimeGPU;
     cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
     fprintf(stdout, " %.3f", elapsedTimeGPU);
@@ -656,7 +667,6 @@ cudaError_t make_dep_sep_fused_reversed(float *A,
     cudaEvent_t startGPU, stopGPU;
     cudaEventCreate(&startGPU);
     cudaEventCreate(&stopGPU);
-    cudaEventRecord(startGPU, 0);
 
 
     // Choose which GPU to run on, change this on a multi-GPU system.
@@ -702,6 +712,8 @@ cudaError_t make_dep_sep_fused_reversed(float *A,
 
     // Run first convolution processing
 
+    cudaEventRecord(startGPU, 0);
+
     dim3 dimBlock1(std::max(c2, c3), 1);
     dim3 dimGrid1(n2, n2);
     // Launch a kernel on the GPU with one thread for each element.
@@ -711,6 +723,9 @@ cudaError_t make_dep_sep_fused_reversed(float *A,
                                                                                               f2, f2,
                                                                                               f1, f1,
                                                                                               dev_A, dev_F2, dev_C, dev_F1, dev_E);
+
+    cudaEventRecord(stopGPU, 0);
+    cudaEventSynchronize(stopGPU);
 
     // Check for any errors launching the kernel
     cudaStatus = cudaGetLastError();
@@ -737,8 +752,6 @@ cudaError_t make_dep_sep_fused_reversed(float *A,
     if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
         goto Error;
 
-    cudaEventRecord(stopGPU, 0);
-    cudaEventSynchronize(stopGPU);
     float elapsedTimeGPU;
     cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
     fprintf(stdout, " %.3f", elapsedTimeGPU);
@@ -833,10 +846,10 @@ bool test_convolutions(int N1, int F1, int C1, int C3) {
 
     bool is_Passed = true;
 
-    //is_Passed &= compare_convolution(N2, N2, F1, F1, C1, C2, A, B, C_1, 1e-1);
-    //is_Passed &= compare_convolution(N3, N3, F2, F2, C2, C3, C_1, D, E_1, 1e-1);
+    is_Passed &= compare_convolution(N2, N2, F1, F1, C1, C2, A, B, C_1, 1e-1);
+    is_Passed &= compare_convolution(N3, N3, F2, F2, C2, C3, C_1, D, E_1, 1e-1);
 
-    //is_Passed &= compare_results(E_1, E_2, 1e-1);
+    is_Passed &= compare_results(E_1, E_2, 1e-1);
 
     std::cout << std::endl;
 
@@ -846,10 +859,10 @@ bool test_convolutions(int N1, int F1, int C1, int C3) {
 
 int main()
 {
-    std::ios_base::sync_with_stdio(false);
+    /*std::ios_base::sync_with_stdio(false);
     std::cin.tie(0);
     freopen("parameters.csv", "r", stdin);
-    freopen("results.csv", "w", stdout);
+    freopen("results.csv", "w", stdout);*/
 
     //bool is_Passed = test_convolutions(1, 100, 3, 64, 64);
     bool is_Passed = true;
