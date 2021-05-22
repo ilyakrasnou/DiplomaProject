@@ -10,8 +10,15 @@
 #include <vector>
 
 #define BSIZE 16
+
+// channel-last
+//#define id(c, x, y, C, X, Y) ((c) + (C) * ((x) + (X) * (y)))
+//#define f_id(a, c, x, y, A, C, X, Y) ((c) + (C) * ((a) + (A) * ((x) + (X) * (y))))
+
+// channel-first
 #define id(c, x, y, C, X, Y) ((x) + (X) * ((y) + (Y) * (c)))
 #define f_id(a, c, x, y, A, C, X, Y) ((x) + (X) * ((y) + (Y) * ((c) + (C) * (a))))
+
 #define ReLU(v) (max((v), 0.0f))
 
 int T = 4;
@@ -374,7 +381,6 @@ cudaError_t make_two_concolution(float *A,
 	cudaEvent_t startGPU, stopGPU;
 	cudaEventCreate(&startGPU);
 	cudaEventCreate(&stopGPU);
-	cudaEventRecord(startGPU, 0);
 
 
 	// Choose which GPU to run on, change this on a multi-GPU system.
@@ -419,6 +425,7 @@ cudaError_t make_two_concolution(float *A,
 		goto Error;
 
 	// Run first convolution processing
+    cudaEventRecord(startGPU, 0);
 
 	dim3 dimBlock1(c2, 1);
 	dim3 dimGrid1((n2 + T - 1) / T, (n2 + T - 1) / T);
@@ -436,13 +443,13 @@ cudaError_t make_two_concolution(float *A,
 	//	goto Error;
 	//}
 
-	// cudaDeviceSynchronize waits for the kernel to finish, and returns
-	// any errors encountered during the launch.
-	cudaStatus = cudaDeviceSynchronize();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-		goto Error;
-	}
+	//// cudaDeviceSynchronize waits for the kernel to finish, and returns
+	//// any errors encountered during the launch.
+	//cudaStatus = cudaDeviceSynchronize();
+	//if (cudaStatus != cudaSuccess) {
+	//	fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+	//	goto Error;
+	//}
 
 	// Run second convolution processing
 
@@ -454,6 +461,9 @@ cudaError_t make_two_concolution(float *A,
 		                                 f2, f2,
 		                                 T, T, 
 		                                 dev_C, dev_F2, dev_E);
+    
+    cudaEventRecord(stopGPU, 0);
+    cudaEventSynchronize(stopGPU);
 
 	//// Check for any errors launching the kernel
 	//cudaStatus = cudaGetLastError();
@@ -462,13 +472,13 @@ cudaError_t make_two_concolution(float *A,
 	//	goto Error;
 	//}
 
-	// cudaDeviceSynchronize waits for the kernel to finish, and returns
-	// any errors encountered during the launch.
-	cudaStatus = cudaDeviceSynchronize();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-		goto Error;
-	}
+	//// cudaDeviceSynchronize waits for the kernel to finish, and returns
+	//// any errors encountered during the launch.
+	//cudaStatus = cudaDeviceSynchronize();
+	//if (cudaStatus != cudaSuccess) {
+	//	fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+	//	goto Error;
+	//}
 
 
 	// Copy output result from GPU
@@ -480,8 +490,6 @@ cudaError_t make_two_concolution(float *A,
 	if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
 		goto Error;
 
-	cudaEventRecord(stopGPU, 0);
-	cudaEventSynchronize(stopGPU);
 	float elapsedTimeGPU;
 	cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
 	fprintf(stdout, " %.3f", elapsedTimeGPU);
@@ -522,7 +530,6 @@ cudaError_t make_two_concolution_fused(float *A,
 	cudaEvent_t startGPU, stopGPU;
 	cudaEventCreate(&startGPU);
 	cudaEventCreate(&stopGPU);
-	cudaEventRecord(startGPU, 0);
 
 
 	// Choose which GPU to run on, change this on a multi-GPU system.
@@ -567,6 +574,7 @@ cudaError_t make_two_concolution_fused(float *A,
 		goto Error;
 
 	// Run first convolution processing
+    cudaEventRecord(startGPU, 0);
 	//int T = (int) sqrt(1024 / std::max(c2, c3));
 	//int T = 3;
 
@@ -581,21 +589,23 @@ cudaError_t make_two_concolution_fused(float *A,
 					  	  															     T, T,
 		                                                                                 dev_A, dev_F1, dev_C, dev_F2, dev_E);
 
+    cudaEventRecord(stopGPU, 0);
+    cudaEventSynchronize(stopGPU);
 
-	// Check for any errors launching the kernel
-	cudaStatus = cudaGetLastError();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-		goto Error;
-	}
+	//// Check for any errors launching the kernel
+	//cudaStatus = cudaGetLastError();
+	//if (cudaStatus != cudaSuccess) {
+	//	fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+	//	goto Error;
+	//}
 
-	// cudaDeviceSynchronize waits for the kernel to finish, and returns
-	// any errors encountered during the launch.
-	cudaStatus = cudaDeviceSynchronize();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-		goto Error;
-	}
+	//// cudaDeviceSynchronize waits for the kernel to finish, and returns
+	//// any errors encountered during the launch.
+	//cudaStatus = cudaDeviceSynchronize();
+	//if (cudaStatus != cudaSuccess) {
+	//	fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+	//	goto Error;
+	//}
 
 
 	// Copy output result from GPU
@@ -607,8 +617,6 @@ cudaError_t make_two_concolution_fused(float *A,
 	if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
 		goto Error;
 
-	cudaEventRecord(stopGPU, 0);
-	cudaEventSynchronize(stopGPU);
 	float elapsedTimeGPU;
 	cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
 	fprintf(stdout, " %.3f", elapsedTimeGPU);
