@@ -8,17 +8,16 @@
 #include <vector>
 
 #define BSIZE 16
+
+// channel-last
+//#define id(c, x, y, C, X, Y) ((c) + (C) * ((x) + (X) * (y)))
+//#define f_id(a, c, x, y, A, C, X, Y) ((c) + (C) * ((a) + (A) * ((x) + (X) * (y))))
+
+// channel-first
 #define id(c, x, y, C, X, Y) ((x) + (X) * ((y) + (Y) * (c)))
 #define f_id(a, c, x, y, A, C, X, Y) ((x) + (X) * ((y) + (Y) * ((c) + (C) * (a))))
+
 #define ReLU(v) (max((v), 0.0f))
-
-cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
-
-__global__ void addKernel(int *c, const int *a, const int *b)
-{
-    int i = threadIdx.x;
-    c[i] = a[i] + b[i];
-}
 
 __global__ void convolution_simple(int N1y, int N1x, int C1,
 	                               int N2y, int N2x, int C2,
@@ -65,8 +64,8 @@ __global__ void convolution_os_is(int N1y, int N1x, int C1,
 	                              const float *F2,
 	                              // const float *B2,
 	                              float *O2) {
-	const int ty = blockIdx.x; // < N3y / 32 
-	const int tx = blockIdx.y; // < N3x / 32
+	const int ty = blockIdx.x; // < N3y / BSIZE 
+	const int tx = blockIdx.y; // < N3x / BSIZE
 	const int c3 = threadIdx.x;
 
 	const int n3y_bound = min(N3y, (ty + 1)*BSIZE);
@@ -201,7 +200,6 @@ cudaError_t make_two_concolution(float *A,
 	cudaEvent_t startGPU, stopGPU;
 	cudaEventCreate(&startGPU);
 	cudaEventCreate(&stopGPU);
-	cudaEventRecord(startGPU, 0);
 
 
 	// Choose which GPU to run on, change this on a multi-GPU system.
@@ -246,6 +244,7 @@ cudaError_t make_two_concolution(float *A,
 		goto Error;
 
 	// Run first convolution processing
+    cudaEventRecord(startGPU, 0);
 
 	dim3 dimBlock1(c2, 1);
 	dim3 dimGrid1((n2 + BSIZE - 1) / BSIZE, (n2 + BSIZE - 1) / BSIZE);
@@ -262,13 +261,13 @@ cudaError_t make_two_concolution(float *A,
 	//	goto Error;
 	//}
 
-	// cudaDeviceSynchronize waits for the kernel to finish, and returns
-	// any errors encountered during the launch.
-	cudaStatus = cudaDeviceSynchronize();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-		goto Error;
-	}
+	//// cudaDeviceSynchronize waits for the kernel to finish, and returns
+	//// any errors encountered during the launch.
+	//cudaStatus = cudaDeviceSynchronize();
+	//if (cudaStatus != cudaSuccess) {
+	//	fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+	//	goto Error;
+	//}
 
 	// Run second convolution processing
 
@@ -280,6 +279,9 @@ cudaError_t make_two_concolution(float *A,
 		                                        f2, f2,
 		                                        dev_C, dev_F2, dev_E);
 
+    cudaEventRecord(stopGPU, 0);
+    cudaEventSynchronize(stopGPU);
+
 	//// Check for any errors launching the kernel
 	//cudaStatus = cudaGetLastError();
 	//if (cudaStatus != cudaSuccess) {
@@ -287,13 +289,13 @@ cudaError_t make_two_concolution(float *A,
 	//	goto Error;
 	//}
 
-	// cudaDeviceSynchronize waits for the kernel to finish, and returns
-	// any errors encountered during the launch.
-	cudaStatus = cudaDeviceSynchronize();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-		goto Error;
-	}
+	//// cudaDeviceSynchronize waits for the kernel to finish, and returns
+	//// any errors encountered during the launch.
+	//cudaStatus = cudaDeviceSynchronize();
+	//if (cudaStatus != cudaSuccess) {
+	//	fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+	//	goto Error;
+	//}
 
 
 	// Copy output result from GPU
@@ -305,11 +307,9 @@ cudaError_t make_two_concolution(float *A,
 	if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
 		goto Error;
 
-	cudaEventRecord(stopGPU, 0);
-	cudaEventSynchronize(stopGPU);
 	float elapsedTimeGPU;
 	cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
-	fprintf(stdout, "Elapsed GPU time: %.3f\n", elapsedTimeGPU);
+	fprintf(stdout, " %.3f", elapsedTimeGPU);
 	fflush(stdout);
 
 Error:
@@ -347,7 +347,6 @@ cudaError_t make_two_concolution_os_is(float *A,
 	cudaEvent_t startGPU, stopGPU;
 	cudaEventCreate(&startGPU);
 	cudaEventCreate(&stopGPU);
-	cudaEventRecord(startGPU, 0);
 
 
 	// Choose which GPU to run on, change this on a multi-GPU system.
@@ -392,6 +391,7 @@ cudaError_t make_two_concolution_os_is(float *A,
 		goto Error;
 
 	// Run first convolution processing
+    cudaEventRecord(startGPU, 0);
 
 	dim3 dimBlock1(c3, 1);
 	dim3 dimGrid1((n3 + BSIZE - 1) / BSIZE, (n3 + BSIZE - 1) / BSIZE);
@@ -403,20 +403,23 @@ cudaError_t make_two_concolution_os_is(float *A,
 		                                       f2, f2,
 		                                       dev_A, dev_F1, dev_C, dev_F2, dev_E);
 
-	// Check for any errors launching the kernel
-	cudaStatus = cudaGetLastError();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-		goto Error;
-	}
+    cudaEventRecord(stopGPU, 0);
+    cudaEventSynchronize(stopGPU);
 
-	// cudaDeviceSynchronize waits for the kernel to finish, and returns
-	// any errors encountered during the launch.
-	cudaStatus = cudaDeviceSynchronize();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-		goto Error;
-	}
+	//// Check for any errors launching the kernel
+	//cudaStatus = cudaGetLastError();
+	//if (cudaStatus != cudaSuccess) {
+	//	fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+	//	goto Error;
+	//}
+
+	//// cudaDeviceSynchronize waits for the kernel to finish, and returns
+	//// any errors encountered during the launch.
+	//cudaStatus = cudaDeviceSynchronize();
+	//if (cudaStatus != cudaSuccess) {
+	//	fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+	//	goto Error;
+	//}
 
 
 	// Copy output result from GPU
@@ -428,11 +431,9 @@ cudaError_t make_two_concolution_os_is(float *A,
 	if (check_error_status(cudaStatus, "cudaMemcpy failed!\n"))
 		goto Error;
 
-	cudaEventRecord(stopGPU, 0);
-	cudaEventSynchronize(stopGPU);
 	float elapsedTimeGPU;
 	cudaEventElapsedTime(&elapsedTimeGPU, startGPU, stopGPU);
-	fprintf(stdout, "Elapsed GPU time: %.3f\n", elapsedTimeGPU);
+	fprintf(stdout, " %.3f", elapsedTimeGPU);
 	fflush(stdout);
 
 Error:
@@ -449,19 +450,12 @@ Error:
 }
 
 
-bool test_convolutions() {
-	int C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
-	// int C1 = 1, C2 = 1, C3 = 1, F1 = 3, F2 = 3;
-	// int N1 = rand() % 100 + F1 + F2 + 400;
-	int N1 = 280 + F1 + F2;
-	// int N1 = rand() % 350 + F1 + F2;
-	// int N1 = rand() % 200 + 3, C1 = 1, C2 = 64, C3 = 64, F1 = 3, F2 = 3;
-	std::cout << "Start" << std::endl;
-
+bool test_convolutions(int N, int F1, int F2, int C1, int C2, int C3) {
+	int N1 = N;
 	int N2 = N1 - F1 + 1;
 	int N3 = N2 - F2 + 1;
 
-	std::cout << N1 << " " << N2 << " " << N3 << std::endl;
+	std::cout << N1 << " " << F1 << " " << F2 << " " << C1 << " " << C2 << " " << C3;
 
 	std::vector<float> A(C1*N1*N1);
 	std::vector<float> B(C2*C1*F1*F1);
@@ -493,7 +487,7 @@ bool test_convolutions() {
 
 	cudaError cudaStatus;
 
-	std::cout << "Simple convolution" << std::endl;
+	//std::cout << "Simple convolution" << std::endl;
 
 	cudaStatus = make_two_concolution(A.data(), B.data(), C_1.data(),
 		                              D.data(), E_1.data(),
@@ -502,7 +496,7 @@ bool test_convolutions() {
 	if (check_error_status(cudaStatus, "Simple convolution failed!\n"))
 		return false;
 
-	std::cout << "OS-IS convolution" << std::endl;
+	//std::cout << "OS-IS convolution" << std::endl;
 
 	cudaStatus = make_two_concolution_os_is(A.data(), B.data(), C_2.data(),
 				                            D.data(), E_2.data(),
@@ -511,12 +505,14 @@ bool test_convolutions() {
 	if (check_error_status(cudaStatus, "OS-IS convolution failed!\n"))
 		return false;
 
+    std::cout << std::endl;
+
 	bool is_Passed = true;
 
-	is_Passed &= compare_convolution(N2, N2, F1, F1, C1, C2, A, B, C_1, 1e-1);
-	is_Passed &= compare_convolution(N3, N3, F2, F2, C2, C3, C_1, D, E_1, 1e-1);
+	//is_Passed &= compare_convolution(N2, N2, F1, F1, C1, C2, A, B, C_1, 1e-1);
+	//is_Passed &= compare_convolution(N3, N3, F2, F2, C2, C3, C_1, D, E_1, 1e-1);
 
-	is_Passed &= compare_results(E_1, E_2, 1e-1);
+	//is_Passed &= compare_results(E_1, E_2, 1e-1);
 
 	return is_Passed;
 }
@@ -524,15 +520,27 @@ bool test_convolutions() {
 
 int main()
 {
-	bool is_Passed = test_convolutions();
+    /*std::ios_base::sync_with_stdio(false);
+    std::cin.tie(0);
+    freopen("parameters.csv", "r", stdin);
+    freopen("results.csv", "w", stdout);*/
 
-	std::cout << "Total: ";
-	if (is_Passed) {
-		std::cout << "Passed!" << std::endl;
-	}
-	else {
-		std::cout << "Failed!" << std::endl;
-	}
+    //bool is_Passed = test_convolutions(1, 100, 3, 64, 64);
+    bool is_Passed = true;
 
-	return 0;
+    int N, F1, F2, C1, C2, C3;
+
+    while (std::cin >> N >> F1 >> F2 >> C1 >> C2 >> C3) {
+        is_Passed &= test_convolutions(N, F1, F2, C1, C2, C3);
+    }
+
+    /*std::cout << "Total: ";
+    if (is_Passed) {
+        std::cout << "Passed!" << std::endl;
+    }
+    else {
+        std::cout << "Failed!" << std::endl;
+    }*/
+
+    return 0;
 }
