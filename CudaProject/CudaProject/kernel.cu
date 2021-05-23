@@ -77,13 +77,13 @@ __global__ void convolution_os_is(int N1y, int N1x, int C1,
 	if (n3y_0 >= N3y || n3x_0 >= N3x)
 		return;
 
-	float buffer[BSIZE][BSIZE];
+	//float buffer[BSIZE][BSIZE];
 	float t;
 
 	// clear buffer
-	for (int i = 0; i < n3y_bound - n3y_0; ++i)
-	for (int j = 0; j < n3x_bound - n3x_0; ++j)
-		buffer[i][j] = 0;
+	for (int i = n3y_0; i < n3y_bound; ++i)
+	for (int j = n3x_0; j < n3x_bound; ++j)
+		O2[id(c3, j, i, C3, N3x, N3y)] = 0;
 
 	// calculate buffer
 	for (int c2 = 0; c2 < C2; c2++)
@@ -108,14 +108,14 @@ __global__ void convolution_os_is(int N1y, int N1x, int C1,
 		for (int n3y = max(n3y_0, n2y - F2y + 1); n3y < n3y_bound && n3y <= n2y; ++n3y)
 		for (int n3x = max(n3x_0, n2x - F2x + 1); n3x < n3x_bound && n3x <= n2x; ++n3x) {
 			int f2y = n2y - n3y, f2x = n2x - n3x;
-			buffer[n3y - n3y_0][n3x - n3x_0] += t * F2[f_id(c3, c2, f2x, f2y, C3, C2, F2x, F2y)];
+            O2[id(c3, n3x, n3y, C3, N3x, N3y)] += t * F2[f_id(c3, c2, f2x, f2y, C3, C2, F2x, F2y)];
 		}
 	}
 
 	// write buffer
-	for (int i = 0; i < n3y_bound - n3y_0; ++i)
-	for (int j = 0; j < n3x_bound - n3x_0; ++j)
-		O2[id(c3, n3x_0 + j, n3y_0 + i, C3, N3x, N3y)] = ReLU(buffer[i][j]);
+	for (int i = n3y_0; i < n3y_bound; ++i)
+	for (int j = n3x_0; j < n3x_bound; ++j)
+		O2[id(c3, j, i, C3, N3x, N3y)] = ReLU(O2[id(c3, j, i, C3, N3x, N3y)]);
 }
 
 bool float_compare(float lhs,
@@ -512,7 +512,7 @@ bool test_convolutions(int N, int F1, int F2, int C1, int C2, int C3) {
 	//is_Passed &= compare_convolution(N2, N2, F1, F1, C1, C2, A, B, C_1, 1e-1);
 	//is_Passed &= compare_convolution(N3, N3, F2, F2, C2, C3, C_1, D, E_1, 1e-1);
 
-	//is_Passed &= compare_results(E_1, E_2, 1e-1);
+	is_Passed &= compare_results(E_1, E_2, 1e-1);
 
 	return is_Passed;
 }
