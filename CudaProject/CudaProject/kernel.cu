@@ -7,7 +7,7 @@
 
 #include <vector>
 
-#define BSIZE 16
+#define BSIZE 8
 
 // channel-last
 //#define id(c, x, y, C, X, Y) ((c) + (C) * ((x) + (X) * (y)))
@@ -520,10 +520,10 @@ bool test_convolutions(int N, int F1, int F2, int C1, int C2, int C3) {
 
 int main()
 {
-    /*std::ios_base::sync_with_stdio(false);
+    std::ios_base::sync_with_stdio(false);
     std::cin.tie(0);
     freopen("parameters.csv", "r", stdin);
-    freopen("results.csv", "w", stdout);*/
+    freopen("results.csv", "w", stdout);
 
     //bool is_Passed = test_convolutions(1, 100, 3, 64, 64);
     bool is_Passed = true;
