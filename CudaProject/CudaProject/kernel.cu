@@ -227,8 +227,8 @@ __global__ void convolution_fused(int N1y, int N1x, int C1,
 	__syncthreads();
 
 	if (c0 < C3) {
-		for (int by = 0; by < ty_bound; by += 1)
-		for (int bx = 0; bx < tx_bound; bx += 1) {
+		for (int by = 0; by < ty_bound; ++by)
+		for (int bx = 0; bx < tx_bound; ++bx) {
 			float t = 0;
 
 			for (int c2 = 0; c2 < C2; c2++)
@@ -706,10 +706,10 @@ bool test_convolutions(int Tile, int N, int F1, int F2, int C1, int C2, int C3) 
 
 int main()
 {
-    std::ios_base::sync_with_stdio(false);
+    /*std::ios_base::sync_with_stdio(false);
     std::cin.tie(0);
     freopen("parameters.csv", "r", stdin);
-    freopen("results.csv", "w", stdout);
+    freopen("results.csv", "w", stdout);*/
 
 	//bool is_Passed = test_convolutions();
 
